@@ -315,3 +315,4 @@ install(FILES projects/gui/res/icons/cutechess_512x512.png DESTINATION ${CMAKE_I
 install(FILES docs/cutechess-cli.6 DESTINATION ${CMAKE_INSTALL_MANDIR}/man6/ COMPONENT Documentation)
 install(FILES docs/cutechess-engines.json.5 DESTINATION ${CMAKE_INSTALL_MANDIR}/man5/ COMPONENT Documentation)
 
+

@@ -173,25 +173,6 @@ void CuteChessApplication::applyCustomAppearance()
 		basePx = qRound(baseInfo.pointSizeF() * 96.0 / 72.0);
 	int headingPx = basePx + 2; // ~1.5px, rounded up to a whole px
 
-	// BUGFIX (black text on black background in menus): the blanket
-	// "QWidget { color: #202020; }" rule below forces every widget's
-	// *text* to dark, including QMenu/QMenuBar items -- but it never
-	// says anything about their *background*. QMenu/QMenuBar popups
-	// are frequently painted by the native platform style rather than
-	// from QPalette::Window (that's true of the native Windows style
-	// in dark mode, and of several Linux/GTK platform themes), so the
-	// QPalette::Window fix above does not reliably reach them either.
-	// The net effect: forced dark text landing on whatever background
-	// the OS happens to draw for a popup menu, which is black/dark on
-	// a dark-themed desktop -- i.e. unreadable dark-on-dark menus.
-	// Fix: give QMenu and QMenuBar their own explicit background AND
-	// text-colour rules (including the selected/hovered item state),
-	// so their appearance no longer depends on native popup painting
-	// or on the platform's palette at all.
-	const QString menuBg = midCream.name();
-	const QString menuHighlightBg = pal.color(QPalette::Highlight).name();
-	const QString menuHighlightText = pal.color(QPalette::HighlightedText).name();
-
 	QString sheet = QString(
 		// Belt-and-braces alongside the palette change above: some
 		// styles/widgets read text colour from the stylesheet in
@@ -218,39 +199,7 @@ void CuteChessApplication::applyCustomAppearance()
 		"  font-weight: bold;"
 		"  font-size: %1px;"
 		"}"
-		// Explicit background so menus never fall back to native/
-		// platform-theme popup painting (see BUGFIX comment above).
-		"QMenu {"
-		"  background-color: %2;"
-		"  color: #202020;"
-		"}"
-		"QMenu::item {"
-		"  background-color: transparent;"
-		"  color: #202020;"
-		"}"
-		"QMenu::item:selected, QMenu::item:pressed {"
-		"  background-color: %3;"
-		"  color: %4;"
-		"}"
-		"QMenu::item:disabled {"
-		"  color: #808080;"
-		"}"
-		"QMenu::separator {"
-		"  background-color: #808080;"
-		"}"
-		"QMenuBar {"
-		"  background-color: %2;"
-		"  color: #202020;"
-		"}"
-		"QMenuBar::item {"
-		"  background-color: transparent;"
-		"  color: #202020;"
-		"}"
-		"QMenuBar::item:selected, QMenuBar::item:pressed {"
-		"  background-color: %3;"
-		"  color: %4;"
-		"}"
-	).arg(QString::number(headingPx), menuBg, menuHighlightBg, menuHighlightText);
+	).arg(QString::number(headingPx));
 
 	setStyleSheet(sheet);
 }

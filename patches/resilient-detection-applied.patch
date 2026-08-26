@@ -1,0 +1,44 @@
+--- pristine/Cutechess-with-pgn-source/projects/gui/src/engineconfigurationdlg.h	2026-08-22 02:44:18.000000000 +0000
++++ build/Cutechess-with-pgn-source/projects/gui/src/engineconfigurationdlg.h	2026-08-24 20:59:13.871683056 +0000
+@@ -93,6 +93,7 @@
+ 
+ 	private:
+ 		bool m_hasError;
++		bool m_lastDetectionWasEmpty;
+ 		EngineOptionModel* m_engineOptionModel;
+ 		QString m_oldCommand;
+ 		QString m_oldPath;
+--- pristine/Cutechess-with-pgn-source/projects/gui/src/engineconfigurationdlg.cpp	2026-08-22 02:44:18.000000000 +0000
++++ build/Cutechess-with-pgn-source/projects/gui/src/engineconfigurationdlg.cpp	2026-08-24 20:59:30.104389055 +0000
+@@ -42,6 +42,7 @@
+ 	EngineConfigurationDialog::DialogMode mode, QWidget* parent)
+ 	: QDialog(parent),
+           m_hasError(false),
++	  m_lastDetectionWasEmpty(false),
+ 	  m_engineOptionModel(new EngineOptionModel(this)),
+ 	  m_engine(nullptr),
+ 	  ui(new Ui::EngineConfigurationDialog)
+@@ -294,7 +295,15 @@
+ 	if (m_engine != nullptr)
+ 		return;
+ 
++	// Treat a previous detection that came back with zero options as
++	// unreliable rather than authoritative: nearly every real UCI/xboard
++	// engine exposes at least one option (Hash, Threads, etc.), so an
++	// empty result is far more likely to be a transient failure (cold
++	// disk cache, a file the OS hasn't finished flushing, a slow first
++	// exec) than a genuine "this engine has no options" answer. Forcing
++	// a fresh attempt here avoids permanently caching a bad result.
+ 	if (!m_hasError
++	&&  !m_lastDetectionWasEmpty
+ 	&&  QObject::sender() != ui->m_detectBtn
+ 	&&  ui->m_commandEdit->text() == m_oldCommand
+ 	&&  ui->m_workingDirEdit->text() == m_oldPath
+@@ -355,6 +364,7 @@
+ 
+ 	m_engineOptionModel->setOptions(m_options);
+ 	m_variants = m_engine->variants();
++	m_lastDetectionWasEmpty = m_options.isEmpty();
+ 
+ 	m_engine->quit();
+ }

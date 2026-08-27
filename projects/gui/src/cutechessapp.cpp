@@ -199,6 +199,55 @@ void CuteChessApplication::applyCustomAppearance()
 		"  font-weight: bold;"
 		"  font-size: %1px;"
 		"}"
+		// FIX: menu bar and dropdown/popup menus (QMenuBar / QMenu) are
+		// native-styled popups on Windows. When Windows is running in
+		// Dark Mode, Qt6's Windows platform integration (>=6.5) renders
+		// these native popups with a dark/black background, while the
+		// "QWidget { color: #202020; }" rule above still forces near-
+		// black text -- the result is black text on a black background,
+		// i.e. an unreadable menu. Explicit QMenuBar/QMenu rules below
+		// force a plain white background with bold black text and a
+		// clearly visible selection highlight, regardless of the
+		// Windows theme setting.
+		"QMenuBar {"
+		"  background-color: #ffffff;"
+		"  color: #000000;"
+		"  font-weight: bold;"
+		"}"
+		"QMenuBar::item {"
+		"  background-color: #ffffff;"
+		"  color: #000000;"
+		"  font-weight: bold;"
+		"  padding: 4px 8px;"
+		"}"
+		"QMenuBar::item:selected, QMenuBar::item:pressed {"
+		"  background-color: #cce4ff;"
+		"  color: #000000;"
+		"}"
+		"QMenu {"
+		"  background-color: #ffffff;"
+		"  color: #000000;"
+		"  font-weight: bold;"
+		"  border: 1px solid #888888;"
+		"}"
+		"QMenu::item {"
+		"  background-color: #ffffff;"
+		"  color: #000000;"
+		"  font-weight: bold;"
+		"  padding: 4px 24px 4px 24px;"
+		"}"
+		"QMenu::item:selected {"
+		"  background-color: #3399ff;"
+		"  color: #ffffff;"
+		"}"
+		"QMenu::item:disabled {"
+		"  color: #808080;"
+		"}"
+		"QMenu::separator {"
+		"  height: 1px;"
+		"  background: #cccccc;"
+		"  margin: 4px 0;"
+		"}"
 	).arg(QString::number(headingPx));
 
 	setStyleSheet(sheet);

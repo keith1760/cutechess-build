@@ -75,10 +75,16 @@ jobs:
         run: |
           copy build\Release\cutechess.exe build\Release\CutechessWindowsLargeBoard.exe
 
+      - name: deploy qt runtime dependencies
+        if: matrix.os == 'windows-2022'
+        shell: cmd
+        run: |
+          windeployqt --release --no-translations build\Release\CutechessWindowsLargeBoard.exe
+
       - name: upload windows executable artifact
         if: matrix.os == 'windows-2022'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: CutechessWindowsLargeBoard
-          path: build/Release/CutechessWindowsLargeBoard.exe
+          path: build/Release/
           if-no-files-found: error

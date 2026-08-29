@@ -5,6 +5,10 @@ on:
       run_id:
         description: "Workflow run id that produced the CutechessWindowsLargeBoard artifact"
         required: true
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/package-release.yml"
 
 permissions: {}
 
@@ -24,7 +28,7 @@ jobs:
         with:
           name: CutechessWindowsLargeBoard
           path: winbuild
-          run-id: ${{ inputs.run_id }}
+          run-id: ${{ inputs.run_id || '33244940951' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: zip windows build

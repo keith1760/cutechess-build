@@ -62,6 +62,19 @@
            </property>
           </widget>
          </item>
+         <item row="3" column="0">
+          <widget class="QCheckBox" name="m_showBoardCoordinatesCheck">
+           <property name="text">
+            <string>Show board coordinates (a-h, 1-8)</string>
+           </property>
+           <property name="toolTip">
+            <string>When turned off, the board is enlarged to fill the space the coordinate labels used to occupy</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
          <item row="4" column="0">
           <widget class="QCheckBox" name="m_useFullUserNameCheck">
            <property name="text">
@@ -664,6 +677,7 @@
   <tabstop>m_highlightLegalMovesCheck</tabstop>
   <tabstop>m_showMoveArrowsCheck</tabstop>
   <tabstop>m_closeUnusedInitialTabCheck</tabstop>
+  <tabstop>m_showBoardCoordinatesCheck</tabstop>
   <tabstop>m_useFullUserNameCheck</tabstop>
   <tabstop>m_playersSidesOnClocksCheck</tabstop>
   <tabstop>m_autoFlipBoardForHumanGamesCheck</tabstop>

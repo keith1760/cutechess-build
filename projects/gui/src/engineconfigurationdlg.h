@@ -93,7 +93,6 @@ class EngineConfigurationDialog : public QDialog
 
 	private:
 		bool m_hasError;
-		bool m_lastDetectionWasEmpty;
 		EngineOptionModel* m_engineOptionModel;
 		QString m_oldCommand;
 		QString m_oldPath;

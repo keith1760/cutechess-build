@@ -59,7 +59,18 @@ GraphicsBoard::GraphicsBoard(int files,
 	  m_files(files),
 	  m_ranks(ranks),
 	  m_squareSize(squareSize),
-	  m_coordSize(squareSize / 2.0),
+	  // Whether the a-h / 1-8 coordinate labels around the edge of
+	  // the board are shown defaults to on, but is user configurable
+	  // (Settings dialog, General tab); setShowCoordinates() updates
+	  // this live if the user changes it. m_coordSize -- the width of
+	  // the margin the labels are drawn in, and also how much extra
+	  // space boundingRect() reserves around the squares -- is 0 when
+	  // the labels are hidden, so BoardView::fitToRect() (which fits
+	  // the whole boundingRect() into the view) grows the squares (and
+	  // with them the pieces, which are drawn in the same scaled
+	  // scene) to fill the reclaimed space.
+	  m_showCoordinates(CuteChessApplication::instance()->showBoardCoordinates()),
+	  m_coordSize(m_showCoordinates ? squareSize / 2.0 : 0.0),
 	  // The light/dark square colours default to the historical
 	  // #FFCE9E / #D18B47 but are now user configurable (Settings
 	  // dialog, General tab); setLightColor()/setDarkColor() are
@@ -137,6 +148,13 @@ void GraphicsBoard::paint(QPainter* painter,
 		}
 		rect.moveTop(rect.top() + m_squareSize);
 	}
+
+	// The a-h / 1-8 coordinate labels around the edge of the board are
+	// optional (Settings dialog, General tab). When they're turned
+	// off, m_coordSize is 0 (see setShowCoordinates()), so there's no
+	// margin left to draw them in anyway -- skip the work entirely.
+	if (!m_showCoordinates)
+		return;
 
 	auto font = painter->font();
 	font.setPointSizeF(font.pointSizeF() * 0.7);
@@ -369,5 +387,26 @@ void GraphicsBoard::setDarkColor(const QColor& color)
 		return;
 
 	m_darkColor = color;
+	update();
+}
+
+bool GraphicsBoard::showCoordinates() const
+{
+	return m_showCoordinates;
+}
+
+void GraphicsBoard::setShowCoordinates(bool show)
+{
+	if (show == m_showCoordinates)
+		return;
+
+	// boundingRect() changes (the coordinate margin appears/
+	// disappears), so QGraphicsItem needs to be told before the
+	// change, not just repainted after it.
+	prepareGeometryChange();
+
+	m_showCoordinates = show;
+	m_coordSize = show ? m_squareSize / 2.0 : 0.0;
+
 	update();
 }

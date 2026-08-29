@@ -156,12 +156,34 @@ class GraphicsBoard : public QGraphicsItem
 		 */
 		void setDarkColor(const QColor& color);
 
+		/*!
+		 * Returns true if the file (a-h) and rank (1-8) coordinate
+		 * labels around the edge of the board are shown; otherwise
+		 * returns false.
+		 */
+		bool showCoordinates() const;
+
+		/*!
+		 * Shows or hides the file/rank coordinate labels around the
+		 * edge of the board, and schedules a repaint.
+		 *
+		 * Hiding the coordinates also removes the margin they
+		 * occupied (see boundingRect()), so the board's containing
+		 * view can grow the squares to fill that reclaimed space.
+		 */
+		void setShowCoordinates(bool show);
+
 	private:
 		int squareIndex(const Chess::Square& square) const;
 
 		int m_files;
 		int m_ranks;
 		qreal m_squareSize;
+		// Declared before m_coordSize: m_coordSize's initializer
+		// depends on this member's value, and members are
+		// initialized in declaration order regardless of the order
+		// they appear in the constructor's initializer list.
+		bool m_showCoordinates;
 		qreal m_coordSize;
 		QRectF m_rect;
 		QColor m_lightColor;

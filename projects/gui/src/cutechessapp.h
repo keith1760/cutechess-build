@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QPointer>
 #include <QColor>
+#include <QSocketNotifier>
 
 class EngineManager;
 class GameManager;
@@ -66,6 +67,21 @@ class CuteChessApplication : public QApplication
 		static QString userName();
 
 		/*!
+		 * Async-signal-safe handler registered for SIGTERM,
+		 * SIGINT and SIGHUP (see installSignalHandlers()).
+		 *
+		 * A plain signal handler cannot safely call into Qt or
+		 * do anything beyond a very small set of async-signal-safe
+		 * operations, so this only writes a single byte to one
+		 * end of a self-pipe (a connected socket pair). That
+		 * write wakes up the Qt event loop via the QSocketNotifier
+		 * set up on the other end (see handleUnixSignal()), where
+		 * the actual quit logic can then run safely as normal,
+		 * queued Qt code.
+		 */
+		static void unixSignalHandler(int signalNumber);
+
+		/*!
 		 * Returns the colour used for the board's background /
 		 * "wall" squares and the mid-cream application palette.
 		 *
@@ -97,6 +113,19 @@ class CuteChessApplication : public QApplication
 		 */
 		QColor darkSquareColor() const;
 
+		/*!
+		 * Returns true if the file (a-h) and rank (1-8) coordinate
+		 * labels around the edge of the board are shown; otherwise
+		 * returns false.
+		 *
+		 * Defaults to true, but can be turned off by the user via
+		 * the Settings dialog (General tab), which also enlarges
+		 * the board (and the pieces on it) to fill the space the
+		 * labels used to occupy. The choice is persisted in
+		 * QSettings under "ui/show_board_coordinates".
+		 */
+		bool showBoardCoordinates() const;
+
 	public slots:
 		/*!
 		 * Sets the board/application background colour to \a color,
@@ -118,6 +147,13 @@ class CuteChessApplication : public QApplication
 		 * so open boards recolor immediately without restarting.
 		 */
 		void setDarkSquareColor(const QColor& color);
+		/*!
+		 * Sets whether the board's coordinate labels are shown to
+		 * \a show, persists it, and notifies any listeners via
+		 * showBoardCoordinatesChanged() so open boards resize
+		 * immediately without restarting.
+		 */
+		void setShowBoardCoordinates(bool show);
 		MainWindow* newGameWindow(ChessGame* game);
 		void newDefaultGame();
 		void showSettingsDialog();
@@ -146,10 +182,19 @@ class CuteChessApplication : public QApplication
 		 * a restart.
 		 */
 		void darkSquareColorChanged(const QColor& color);
+		/*!
+		 * Emitted after setShowBoardCoordinates() changes whether
+		 * the board's coordinate labels are shown, so already-open
+		 * boards can resize without a restart.
+		 */
+		void showBoardCoordinatesChanged(bool show);
 
 	private:
 		void showDialog(QWidget* dlg);
 		void applyCustomAppearance();
+#ifndef Q_OS_WIN32
+		void installSignalHandlers();
+#endif
 
 		SettingsDialog* m_settingsDialog;
 		TournamentResultsDialog* m_tournamentResultsDialog;
@@ -169,9 +214,27 @@ class CuteChessApplication : public QApplication
 		QByteArray m_pendingMainWindowState;
 		bool m_hasPendingMainWindowGeometry;
 
+#ifndef Q_OS_WIN32
+		// The self-pipe (as a Unix domain socket pair) used to get
+		// out of async-signal-handler context safely: sig[0] is
+		// read from Qt's event loop (via m_signalNotifier), sig[1]
+		// is written to (write(2) only -- async-signal-safe) from
+		// unixSignalHandler().
+		static int m_signalFd[2];
+		QSocketNotifier* m_signalNotifier;
+#endif
+
 	private slots:
 		void onLastWindowClosed();
 		void onAboutToQuit();
+#ifndef Q_OS_WIN32
+		// Runs on the Qt event loop thread once unixSignalHandler()
+		// wakes m_signalNotifier; reads (and discards) the byte(s)
+		// from the pipe, then quits the same way the Quit menu
+		// action does, so the normal closeEvent()/aboutToQuit()
+		// chain -- and therefore the normal settings save -- runs.
+		void handleUnixSignal();
+#endif
 };
 
 #endif // CUTE_CHESS_APPLICATION_H

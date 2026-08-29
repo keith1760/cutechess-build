@@ -79,6 +79,29 @@ BoardScene::BoardScene(QObject* parent)
 		if (m_squares != nullptr)
 			m_squares->setDarkColor(color);
 	});
+
+	// Keep the board's coordinate-label visibility in sync with the
+	// user's choice (Settings dialog, General tab), even for a board
+	// that's already on screen. Re-deriving the scene rect from the
+	// items afterwards is what lets BoardView notice the board's
+	// bounding box shrank/grew and re-fit it (enlarging or shrinking
+	// the squares, and with them the pieces, to match) -- see
+	// BoardView::onSceneRectChanged().
+	connect(CuteChessApplication::instance(),
+		&CuteChessApplication::showBoardCoordinatesChanged,
+		this, [=](bool show)
+	{
+		if (m_squares == nullptr)
+			return;
+
+		m_squares->setShowCoordinates(show);
+
+		if (m_reserve != nullptr)
+			m_reserve->setX(m_squares->boundingRect().right() +
+					m_reserve->boundingRect().right() + 7);
+
+		setSceneRect(itemsBoundingRect());
+	});
 }
 
 BoardScene::~BoardScene()

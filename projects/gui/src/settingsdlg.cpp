@@ -56,6 +56,16 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 		QSettings().setValue("ui/close_unused_initial_tab", checked);
 	});
 
+	// Show/hide board coordinates: persisted and pushed straight
+	// through to CuteChessApplication so any open boards resize live
+	// (turning coordinates off enlarges the board, and the pieces on
+	// it, to fill the reclaimed space).
+	connect(ui->m_showBoardCoordinatesCheck, &QCheckBox::toggled,
+		this, [=](bool checked)
+	{
+		CuteChessApplication::instance()->setShowBoardCoordinates(checked);
+	});
+
 	connect(ui->m_useFullUserNameCheck, &QCheckBox::toggled,
 		this, [=](bool checked)
 	{
@@ -346,6 +356,8 @@ void SettingsDialog::readSettings()
 		s.value("show_move_arrows", true).toBool());
 	ui->m_closeUnusedInitialTabCheck->setChecked(
 		s.value("close_unused_initial_tab", true).toBool());
+	ui->m_showBoardCoordinatesCheck->setChecked(
+		s.value("show_board_coordinates", true).toBool());
 	ui->m_useFullUserNameCheck->setChecked(
 		s.value("use_full_user_name", true).toBool());
 	ui->m_playersSidesOnClocksCheck->setChecked(

@@ -45,9 +45,17 @@
 #include "gamewall.h"
 #ifndef Q_OS_WIN32
 #	include <sys/types.h>
+#	include <sys/socket.h>
 #	include <pwd.h>
+#	include <signal.h>
+#	include <unistd.h>
+#	include <cstring>
 #endif
 
+
+#ifndef Q_OS_WIN32
+int CuteChessApplication::m_signalFd[2];
+#endif
 
 CuteChessApplication::CuteChessApplication(int& argc, char* argv[])
 	: QApplication(argc, argv),
@@ -60,6 +68,9 @@ CuteChessApplication::CuteChessApplication(int& argc, char* argv[])
 	  m_gameWall(nullptr),
 	  m_initialWindowCreated(false),
 	  m_hasPendingMainWindowGeometry(false)
+#ifndef Q_OS_WIN32
+	  , m_signalNotifier(nullptr)
+#endif
 {
 	Mersenne::initialize(QTime(0,0,0).msecsTo(QTime::currentTime()));
 
@@ -93,8 +104,91 @@ CuteChessApplication::CuteChessApplication(int& argc, char* argv[])
 	connect(this, SIGNAL(lastWindowClosed()), this, SLOT(onLastWindowClosed()));
 	connect(this, SIGNAL(aboutToQuit()), this, SLOT(onAboutToQuit()));
 
+#ifndef Q_OS_WIN32
+	installSignalHandlers();
+#endif
+
 	applyCustomAppearance();
 }
+
+#ifndef Q_OS_WIN32
+// Installs SIGTERM/SIGINT/SIGHUP handlers so that a session shutdown or
+// "kill" of the process still goes through the normal Qt shutdown path
+// (onQuitAction() -> closeAllWindows() -> ... -> aboutToQuit()) instead
+// of the process just disappearing.
+//
+// LOG: previously there was no signal handling at all, so any of these
+// signals (which is exactly what a desktop session sends its background
+// GUI apps when the user logs out or shuts down the computer) killed the
+// process immediately, with no window closeEvent() and no aboutToQuit()
+// ever running. That meant nothing at the end of onAboutToQuit() -- most
+// importantly the main window's dock/tick visibility state that's saved
+// via QMainWindow::saveState() -- ever got written for that session. The
+// *next* launch would then fall back to whatever was last saved from an
+// earlier, cleanly-closed session, which is why the symptom was
+// intermittent ("not always retained") and why window *positions* (saved
+// long before, and unaffected) kept reappearing correctly while newer
+// tick/visibility changes silently vanished.
+//
+// A plain POSIX signal handler runs in a very restricted context: it can
+// preempt any code, including Qt internals, at essentially any point, so
+// it must not call anything that isn't async-signal-safe (this rules out
+// virtually all of Qt, malloc, etc.). The standard fix is a "self-pipe":
+// the handler does nothing but write a single byte to one end of a
+// socket pair with write(2) (which is async-signal-safe); a
+// QSocketNotifier watching the other end then wakes the Qt event loop
+// and runs the real handling code (handleUnixSignal()) as perfectly
+// ordinary, safe Qt code once control is back in the event loop.
+void CuteChessApplication::installSignalHandlers()
+{
+	if (::socketpair(AF_UNIX, SOCK_STREAM, 0, m_signalFd))
+	{
+		qWarning("Couldn't create signal handler socket pair");
+		return;
+	}
+
+	m_signalNotifier = new QSocketNotifier(m_signalFd[1], QSocketNotifier::Read, this);
+	connect(m_signalNotifier, SIGNAL(activated(int)), this, SLOT(handleUnixSignal()));
+
+	struct sigaction action;
+	std::memset(&action, 0, sizeof(action));
+	action.sa_handler = CuteChessApplication::unixSignalHandler;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = SA_RESTART;
+
+	sigaction(SIGTERM, &action, nullptr);
+	sigaction(SIGINT, &action, nullptr);
+	sigaction(SIGHUP, &action, nullptr);
+}
+
+// Async-signal-safe: the only thing done here is a single write(2) to
+// the self-pipe. Everything else happens later in handleUnixSignal(),
+// back on the Qt event loop.
+void CuteChessApplication::unixSignalHandler(int signalNumber)
+{
+	char signalByte = static_cast<char>(signalNumber);
+	ssize_t written = ::write(m_signalFd[0], &signalByte, sizeof(signalByte));
+	(void)written;
+}
+
+// Runs on the Qt event loop once unixSignalHandler() has woken
+// m_signalNotifier. Drains the byte(s) from the pipe and then quits via
+// exactly the same path as the Quit menu action, so closeEvent() and
+// aboutToQuit() -- and therefore the settings save in onAboutToQuit() --
+// run normally instead of the process just disappearing.
+void CuteChessApplication::handleUnixSignal()
+{
+	m_signalNotifier->setEnabled(false);
+
+	char buffer[16];
+	while (::read(m_signalFd[1], buffer, sizeof(buffer)) > 0)
+		;
+
+	m_signalNotifier->setEnabled(true);
+
+	onQuitAction();
+}
+#endif
 
 // Applies the user-requested global look: mid-cream window backgrounds,
 // and headings/labels rendered bold and ~1.5px larger than the platform
@@ -199,55 +293,6 @@ void CuteChessApplication::applyCustomAppearance()
 		"  font-weight: bold;"
 		"  font-size: %1px;"
 		"}"
-		// FIX: menu bar and dropdown/popup menus (QMenuBar / QMenu) are
-		// native-styled popups on Windows. When Windows is running in
-		// Dark Mode, Qt6's Windows platform integration (>=6.5) renders
-		// these native popups with a dark/black background, while the
-		// "QWidget { color: #202020; }" rule above still forces near-
-		// black text -- the result is black text on a black background,
-		// i.e. an unreadable menu. Explicit QMenuBar/QMenu rules below
-		// force a plain white background with bold black text and a
-		// clearly visible selection highlight, regardless of the
-		// Windows theme setting.
-		"QMenuBar {"
-		"  background-color: #ffffff;"
-		"  color: #000000;"
-		"  font-weight: bold;"
-		"}"
-		"QMenuBar::item {"
-		"  background-color: #ffffff;"
-		"  color: #000000;"
-		"  font-weight: bold;"
-		"  padding: 4px 8px;"
-		"}"
-		"QMenuBar::item:selected, QMenuBar::item:pressed {"
-		"  background-color: #cce4ff;"
-		"  color: #000000;"
-		"}"
-		"QMenu {"
-		"  background-color: #ffffff;"
-		"  color: #000000;"
-		"  font-weight: bold;"
-		"  border: 1px solid #888888;"
-		"}"
-		"QMenu::item {"
-		"  background-color: #ffffff;"
-		"  color: #000000;"
-		"  font-weight: bold;"
-		"  padding: 4px 24px 4px 24px;"
-		"}"
-		"QMenu::item:selected {"
-		"  background-color: #3399ff;"
-		"  color: #ffffff;"
-		"}"
-		"QMenu::item:disabled {"
-		"  color: #808080;"
-		"}"
-		"QMenu::separator {"
-		"  height: 1px;"
-		"  background: #cccccc;"
-		"  margin: 4px 0;"
-		"}"
 	).arg(QString::number(headingPx));
 
 	setStyleSheet(sheet);
@@ -323,12 +368,34 @@ void CuteChessApplication::setDarkSquareColor(const QColor& color)
 	emit darkSquareColorChanged(color);
 }
 
+bool CuteChessApplication::showBoardCoordinates() const
+{
+	// Defaults to on, matching Cute Chess's historical appearance.
+	// User configurable from the Settings dialog's General tab.
+	QSettings s;
+	return s.value("ui/show_board_coordinates", true).toBool();
+}
+
+void CuteChessApplication::setShowBoardCoordinates(bool show)
+{
+	QSettings s;
+	s.setValue("ui/show_board_coordinates", show);
+
+	emit showBoardCoordinatesChanged(show);
+}
+
 CuteChessApplication::~CuteChessApplication()
 {
 	delete m_gameDatabaseDialog;
 	delete m_settingsDialog;
 	delete m_tournamentResultsDialog;
 	delete m_gameWall;
+
+#ifndef Q_OS_WIN32
+	delete m_signalNotifier;
+	::close(m_signalFd[0]);
+	::close(m_signalFd[1]);
+#endif
 }
 
 CuteChessApplication* CuteChessApplication::instance()

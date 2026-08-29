@@ -42,7 +42,6 @@ EngineConfigurationDialog::EngineConfigurationDialog(
 	EngineConfigurationDialog::DialogMode mode, QWidget* parent)
 	: QDialog(parent),
           m_hasError(false),
-	  m_lastDetectionWasEmpty(false),
 	  m_engineOptionModel(new EngineOptionModel(this)),
 	  m_engine(nullptr),
 	  ui(new Ui::EngineConfigurationDialog)
@@ -295,15 +294,7 @@ void EngineConfigurationDialog::detectEngineOptions()
 	if (m_engine != nullptr)
 		return;
 
-	// Treat a previous detection that came back with zero options as
-	// unreliable rather than authoritative: nearly every real UCI/xboard
-	// engine exposes at least one option (Hash, Threads, etc.), so an
-	// empty result is far more likely to be a transient failure (cold
-	// disk cache, a file the OS hasn't finished flushing, a slow first
-	// exec) than a genuine "this engine has no options" answer. Forcing
-	// a fresh attempt here avoids permanently caching a bad result.
 	if (!m_hasError
-	&&  !m_lastDetectionWasEmpty
 	&&  QObject::sender() != ui->m_detectBtn
 	&&  ui->m_commandEdit->text() == m_oldCommand
 	&&  ui->m_workingDirEdit->text() == m_oldPath
@@ -364,7 +355,6 @@ void EngineConfigurationDialog::onEngineReady()
 
 	m_engineOptionModel->setOptions(m_options);
 	m_variants = m_engine->variants();
-	m_lastDetectionWasEmpty = m_options.isEmpty();
 
 	m_engine->quit();
 }

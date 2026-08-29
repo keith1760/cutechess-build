@@ -44,19 +44,25 @@ jobs:
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
           ctest --test-dir build
 
-      - name: rename windows executable
+      - name: stage a clean, self-contained output folder
         shell: cmd
         run: |
-          copy build\Release\cutechess.exe build\Release\CutechessWindowsLargeBoard.exe
+          mkdir dist
+          copy build\Release\cutechess.exe dist\CutechessWindowsLargeBoard.exe
+          copy build\Release\cutechess-cli.exe dist\cutechess-cli.exe
+          copy COPYING dist\COPYING.txt
+          copy docs\cutechess-cli.6.html dist\ 2>nul & exit /b 0
+          copy docs\cutechess-engines.json.5.html dist\ 2>nul & exit /b 0
 
-      - name: deploy qt runtime dependencies
+      - name: deploy qt runtime + msvc compiler runtime dependencies
         shell: cmd
         run: |
-          windeployqt --release --no-translations build\Release\CutechessWindowsLargeBoard.exe
+          windeployqt --release --no-translations --compiler-runtime dist\CutechessWindowsLargeBoard.exe
+          windeployqt --release --no-translations --compiler-runtime dist\cutechess-cli.exe
 
       - name: upload windows executable artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: CutechessWindowsLargeBoard
-          path: build/Release/
+          path: dist/
           if-no-files-found: error

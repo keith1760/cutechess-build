@@ -58,8 +58,15 @@ jobs:
         shell: cmd
         run: |
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          windeployqt --release --no-translations --compiler-runtime winpkg\CutechessWindowsLargeBoard.exe
-          windeployqt --release --no-translations --compiler-runtime winpkg\cutechess-cli.exe
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessWindowsLargeBoard.exe
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\cutechess-cli.exe
+          rem windeployqt's --compiler-runtime only drops in the vc_redist.x64.exe
+          rem *installer*, not something a "just unzip and run" portable folder
+          rem can use. Copy the actual redistributable runtime DLLs (vcruntime140.dll,
+          rem msvcp140.dll, etc.) straight from the VS toolchain's own redist folder
+          rem instead -- this is Microsoft's documented, license-compliant way to
+          rem privately redistribute those DLLs alongside an application.
+          copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" winpkg\
 
       - name: verify msvc runtime dlls were bundled
         shell: cmd

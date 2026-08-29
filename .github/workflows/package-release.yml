@@ -1,19 +1,22 @@
 name: package windows build as release
 on:
+  workflow_run:
+    workflows: ["build cutechess"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       run_id:
-        description: "Workflow run id that produced the CutechessWindowsLargeBoard artifact"
-        required: true
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/package-release.yml"
+        description: "Workflow run id that produced the CutechessWindowsLargeBoard artifact (only needed for manual re-runs)"
+        required: false
 
 permissions: {}
 
 jobs:
   package:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
       - name: download built windows artifact
@@ -28,7 +32,7 @@ jobs:
         with:
           name: CutechessWindowsLargeBoard
           path: winbuild
-          run-id: ${{ inputs.run_id || '33244940951' }}
+          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: zip windows build

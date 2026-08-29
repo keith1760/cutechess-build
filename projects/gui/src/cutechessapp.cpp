@@ -26,6 +26,7 @@
 #include <QFontInfo>
 #include <QColor>
 #include <QPalette>
+#include <QStyleFactory>
 
 #include <mersenne.h>
 #include <enginemanager.h>
@@ -107,6 +108,30 @@ CuteChessApplication::CuteChessApplication(int& argc, char* argv[])
 #ifndef Q_OS_WIN32
 	installSignalHandlers();
 #endif
+
+	// BUG FIX: menus (and other native-themed chrome) appeared with
+	// unreadable dark-on-dark text.
+	//
+	// Root cause: applyCustomAppearance() below only ever changed the
+	// application's QPalette / stylesheet, never its QStyle. With no
+	// style explicitly set, Qt uses the native platform style (on
+	// Windows: "windowsvista"/"windows11"). That native style paints
+	// certain chrome -- most notably QMenu / QMenuBar popups -- using
+	// the OS theme engine (uxtheme) directly, rather than reading the
+	// application's QPalette. When Windows is set to dark mode, the OS
+	// theme engine paints that chrome with a dark background regardless
+	// of what colours this app requests, while our own stylesheet still
+	// forces the text to a fixed dark colour (#202020) for readability
+	// against our cream palette everywhere else. Dark text + OS-forced
+	// dark background = invisible menu items.
+	//
+	// Fix: force the "Fusion" style, which is a fully Qt-painted style
+	// that always renders from QPalette and never defers to native OS
+	// theme APIs. This makes every widget -- including QMenu/QMenuBar
+	// popups -- consistently use the colours set in applyCustomAppearance()
+	// below, regardless of the user's OS light/dark theme setting.
+	if (QStyle* fusion = QStyleFactory::create(QStringLiteral("Fusion")))
+		setStyle(fusion);
 
 	applyCustomAppearance();
 }

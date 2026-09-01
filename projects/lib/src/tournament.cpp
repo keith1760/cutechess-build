@@ -20,6 +20,7 @@
 #include <QFile>
 #include <QMultiMap>
 #include <QSet>
+#include <QSettings>
 #include "gamemanager.h"
 #include "playerbuilder.h"
 #include "board/boardfactory.h"
@@ -488,13 +489,32 @@ void Tournament::startGame(TournamentPair* pair)
 	if (m_nextGameNumber > m_finalGameCount)
 		m_finalGameCount = m_nextGameNumber;
 
+	auto whiteBuilder = white.builder();
+	auto blackBuilder = black.builder();
+
+	// Optional display preference: when two engines (no humans
+	// involved) play the same opening twice with reversed colors,
+	// always show the engine that had white in the first game of
+	// that opening pair at the bottom of the board, regardless of
+	// which color it has in the game currently being displayed.
+	//
+	// m_pair->hasOriginalOrder() flips every game (it toggles
+	// whenever the pair's colors are swapped below), and since a
+	// pair always plays its games in blocks of two (one opening,
+	// both colors), the flag is in sync with those blocks: it is
+	// true exactly when the pair's first player -- the engine that
+	// was white in the first game of the current opening pair -- is
+	// white in the game currently being started.
+	if (!whiteBuilder->isHuman() && !blackBuilder->isHuman()
+	&&  QSettings().value("ui/keep_first_named_engine_at_bottom", false).toBool()
+	&&  !m_pair->hasOriginalOrder())
+		game->setBoardShouldBeFlipped(true);
+
 	// Make sure the next game (if any) between the pair will
 	// start with reversed colors.
 	if (m_swapSides)
 		m_pair->swapPlayers();
 
-	auto whiteBuilder = white.builder();
-	auto blackBuilder = black.builder();
 	onGameAboutToStart(game, whiteBuilder, blackBuilder);
 	connect(game, SIGNAL(startFailed(ChessGame*)),
 		this, SLOT(onGameStartFailed(ChessGame*)));

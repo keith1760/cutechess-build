@@ -92,6 +92,16 @@
            </property>
           </widget>
          </item>
+         <item row="6" column="0">
+          <widget class="QCheckBox" name="m_keepFirstNamedEngineAtBottomCheck">
+           <property name="text">
+            <string>Keep first-named engine at the bottom of the board</string>
+           </property>
+           <property name="toolTip">
+            <string>When two engines play the same opening twice with reversed colors, always show the engine that was white in the first of those two games at the bottom of the board</string>
+           </property>
+          </widget>
+         </item>
          <item row="7" column="0">
           <widget class="QCheckBox" name="m_autoFlipBoardForHumanGamesCheck">
            <property name="text">
@@ -680,6 +690,7 @@
   <tabstop>m_showBoardCoordinatesCheck</tabstop>
   <tabstop>m_useFullUserNameCheck</tabstop>
   <tabstop>m_playersSidesOnClocksCheck</tabstop>
+  <tabstop>m_keepFirstNamedEngineAtBottomCheck</tabstop>
   <tabstop>m_autoFlipBoardForHumanGamesCheck</tabstop>
   <tabstop>m_humanCanPlayAfterTimeoutCheck</tabstop>
   <tabstop>m_moveAnimationSpin</tabstop>

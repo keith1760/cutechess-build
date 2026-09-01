@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "Workflow run id that produced the CutechessWindowsLargeBoard artifact (only needed for manual re-runs)"
+        description: "Workflow run id that produced the CutechessForkWithBlackAndWhitePlayedByBothEngines artifact (only needed for manual re-runs)"
         required: false
 
 permissions: {}
@@ -30,28 +30,28 @@ jobs:
       - name: download built windows artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: CutechessWindowsLargeBoard
+          name: CutechessForkWithBlackAndWhitePlayedByBothEngines
           path: winbuild
           run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: zip windows build
+      - name: zip windows build (includes bundled source copy)
         run: |
           cd winbuild
-          zip -r ../CutechessWindowsLargeBoard-win64.zip .
+          zip -r ../CutechessForkWithBlackAndWhitePlayedByBothEngines-win64.zip .
           cd ..
 
-      - name: zip source code
+      - name: zip a standalone extra copy of the source code
         run: |
-          git archive --format=zip -o CutechessWindowsLargeBoard-source.zip HEAD
+          git archive --format=zip -o CutechessForkWithBlackAndWhitePlayedByBothEngines-source.zip HEAD
 
       - name: create release
         run: |
           TAG="winrelease-${{ github.run_id }}"
           gh release create "$TAG" \
-            --title "CutechessWindowsLargeBoard (${{ github.run_id }})" \
-            --notes "Windows build of CutechessWindowsLargeBoard.exe with bundled Qt6 runtime, plus matching source code." \
-            CutechessWindowsLargeBoard-win64.zip \
-            CutechessWindowsLargeBoard-source.zip
+            --title "CutechessForkWithBlackAndWhitePlayedByBothEngines (${{ github.run_id }})" \
+            --notes "Windows build of CutechessForkWithBlackAndWhitePlayedByBothEngines.exe with bundled Qt6 runtime and a copy of the source, plus a standalone extra copy of the source code." \
+            CutechessForkWithBlackAndWhitePlayedByBothEngines-win64.zip \
+            CutechessForkWithBlackAndWhitePlayedByBothEngines-source.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

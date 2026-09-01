@@ -84,6 +84,12 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 		QSettings().setValue("ui/auto_flip_board_for_human_games", checked);
 	});
 
+	connect(ui->m_keepFirstNamedEngineAtBottomCheck, &QCheckBox::toggled,
+		[=](bool checked)
+	{
+		QSettings().setValue("ui/keep_first_named_engine_at_bottom", checked);
+	});
+
 	connect(ui->m_humanCanPlayAfterTimeoutCheck, &QCheckBox::toggled,
 		[=](bool checked)
 	{
@@ -364,6 +370,8 @@ void SettingsDialog::readSettings()
 		s.value("display_players_sides_on_clocks", false).toBool());
 	ui->m_autoFlipBoardForHumanGamesCheck->setChecked(
 		s.value("auto_flip_board_for_human_games", false).toBool());
+	ui->m_keepFirstNamedEngineAtBottomCheck->setChecked(
+		s.value("keep_first_named_engine_at_bottom", false).toBool());
 	ui->m_tbPathEdit->setText(s.value("tb_path").toString());
 	ui->m_moveAnimationSpin->setValue(
 		s.value("move_animation_duration", 300).toInt());

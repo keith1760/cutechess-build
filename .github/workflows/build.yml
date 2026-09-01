@@ -48,7 +48,7 @@ jobs:
         shell: cmd
         run: |
           mkdir winpkg
-          copy build\Release\cutechess.exe winpkg\CutechessWindowsLargeBoard.exe
+          copy build\Release\cutechess.exe winpkg\CutechessForkWithBlackAndWhitePlayedByBothEngines.exe
           copy build\Release\cutechess-cli.exe winpkg\cutechess-cli.exe
           copy COPYING winpkg\COPYING.txt
           if exist docs\cutechess-cli.6.html copy docs\cutechess-cli.6.html winpkg\
@@ -58,7 +58,7 @@ jobs:
         shell: cmd
         run: |
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessWindowsLargeBoard.exe
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessForkWithBlackAndWhitePlayedByBothEngines.exe
           windeployqt --release --no-translations --no-compiler-runtime winpkg\cutechess-cli.exe
           rem windeployqt's --compiler-runtime only drops in the vc_redist.x64.exe
           rem *installer*, not something a "just unzip and run" portable folder
@@ -75,9 +75,15 @@ jobs:
           if not exist winpkg\msvcp140.dll (echo ERROR: msvcp140.dll missing from winpkg && exit /b 1)
           echo MSVC runtime DLLs confirmed present.
 
+      - name: add a copy of the source code alongside the build
+        shell: bash
+        run: |
+          mkdir -p winpkg/source
+          git archive HEAD | tar -x -C winpkg/source
+
       - name: upload windows executable artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: CutechessWindowsLargeBoard
+          name: CutechessForkWithBlackAndWhitePlayedByBothEngines
           path: winpkg/
           if-no-files-found: error

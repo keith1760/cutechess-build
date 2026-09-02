@@ -1,0 +1,57 @@
+name: package windows build as release
+on:
+  workflow_run:
+    workflows: ["build cutechess"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Workflow run id that produced the CutechessWindowsMenuAndTickBoxBugsFixed artifact (only needed for manual re-runs)"
+        required: false
+
+permissions: {}
+
+jobs:
+  package:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: download built windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: CutechessWindowsMenuAndTickBoxBugsFixed
+          path: winbuild
+          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: zip windows build (includes bundled source copy)
+        run: |
+          cd winbuild
+          zip -r ../CutechessWindowsMenuAndTickBoxBugsFixed-win64.zip .
+          cd ..
+
+      - name: zip a standalone extra copy of the source code
+        run: |
+          git archive --format=zip -o CutechessWindowsMenuAndTickBoxBugsFixed-source.zip HEAD
+
+      - name: create release
+        run: |
+          TAG="winrelease-${{ github.run_id }}"
+          gh release create "$TAG" \
+            --title "CutechessWindowsMenuAndTickBoxBugsFixed (${{ github.run_id }})" \
+            --notes "Windows build of CutechessWindowsMenuAndTickBoxBugsFixed.exe with bundled Qt6 runtime and a copy of the source, plus a standalone extra copy of the source code." \
+            CutechessWindowsMenuAndTickBoxBugsFixed-win64.zip \
+            CutechessWindowsMenuAndTickBoxBugsFixed-source.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

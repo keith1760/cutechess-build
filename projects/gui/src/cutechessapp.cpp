@@ -1,0 +1,711 @@
+/*
+    This file is part of Cute Chess.
+    Copyright (C) 2008-2018 Cute Chess authors
+
+    Cute Chess is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Cute Chess is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Cute Chess.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "cutechessapp.h"
+
+#include <QCoreApplication>
+#include <QDir>
+#include <QTime>
+#include <QFileInfo>
+#include <QSettings>
+#include <QFontInfo>
+#include <QColor>
+#include <QPalette>
+#include <QStyle>
+#include <QStyleFactory>
+
+#include <mersenne.h>
+#include <enginemanager.h>
+#include <gamemanager.h>
+#include <board/boardfactory.h>
+#include <chessgame.h>
+#include <timecontrol.h>
+#include <humanbuilder.h>
+
+#include "mainwindow.h"
+#include "settingsdlg.h"
+#include "tournamentresultsdlg.h"
+#include "gamedatabasedlg.h"
+#include "gamedatabasemanager.h"
+#include "importprogressdlg.h"
+#include "pgnimporter.h"
+#include "gamewall.h"
+#ifndef Q_OS_WIN32
+#	include <sys/types.h>
+#	include <sys/socket.h>
+#	include <pwd.h>
+#	include <signal.h>
+#	include <unistd.h>
+#	include <cstring>
+#endif
+
+
+#ifndef Q_OS_WIN32
+int CuteChessApplication::m_signalFd[2];
+#endif
+
+CuteChessApplication::CuteChessApplication(int& argc, char* argv[])
+	: QApplication(argc, argv),
+	  m_settingsDialog(nullptr),
+	  m_tournamentResultsDialog(nullptr),
+	  m_engineManager(nullptr),
+	  m_gameManager(nullptr),
+	  m_gameDatabaseManager(nullptr),
+	  m_gameDatabaseDialog(nullptr),
+	  m_gameWall(nullptr),
+	  m_initialWindowCreated(false),
+	  m_hasPendingMainWindowGeometry(false)
+#ifndef Q_OS_WIN32
+	  , m_signalNotifier(nullptr)
+#endif
+{
+	Mersenne::initialize(QTime(0,0,0).msecsTo(QTime::currentTime()));
+
+	// Set the application icon
+	QIcon icon;
+	icon.addFile(":/icons/cutechess_512x512.png");
+	icon.addFile(":/icons/cutechess_256x256.png");
+	icon.addFile(":/icons/cutechess_128x128.png");
+	icon.addFile(":/icons/cutechess_64x64.png");
+	icon.addFile(":/icons/cutechess_32x32.png");
+	icon.addFile(":/icons/cutechess_24x24.png");
+	icon.addFile(":/icons/cutechess_16x16.png");
+	setWindowIcon(icon);
+
+	setQuitOnLastWindowClosed(false);
+
+	QCoreApplication::setOrganizationName("cutechess");
+	QCoreApplication::setOrganizationDomain("cutechess.com");
+	QCoreApplication::setApplicationName("cutechess");
+	QCoreApplication::setApplicationVersion(CUTECHESS_VERSION);
+
+	// Use Ini format on all platforms
+	QSettings::setDefaultFormat(QSettings::IniFormat);
+
+	// Load the engines
+	engineManager()->loadEngines(configPath() + QLatin1String("/engines.json"));
+
+	// Read the game database state
+	gameDatabaseManager()->readState(configPath() + QLatin1String("/gamedb.bin"));
+
+	connect(this, SIGNAL(lastWindowClosed()), this, SLOT(onLastWindowClosed()));
+	connect(this, SIGNAL(aboutToQuit()), this, SLOT(onAboutToQuit()));
+
+#ifndef Q_OS_WIN32
+	installSignalHandlers();
+#endif
+
+	applyCustomAppearance();
+}
+
+#ifndef Q_OS_WIN32
+// Installs SIGTERM/SIGINT/SIGHUP handlers so that a session shutdown or
+// "kill" of the process still goes through the normal Qt shutdown path
+// (onQuitAction() -> closeAllWindows() -> ... -> aboutToQuit()) instead
+// of the process just disappearing.
+//
+// LOG: previously there was no signal handling at all, so any of these
+// signals (which is exactly what a desktop session sends its background
+// GUI apps when the user logs out or shuts down the computer) killed the
+// process immediately, with no window closeEvent() and no aboutToQuit()
+// ever running. That meant nothing at the end of onAboutToQuit() -- most
+// importantly the main window's dock/tick visibility state that's saved
+// via QMainWindow::saveState() -- ever got written for that session. The
+// *next* launch would then fall back to whatever was last saved from an
+// earlier, cleanly-closed session, which is why the symptom was
+// intermittent ("not always retained") and why window *positions* (saved
+// long before, and unaffected) kept reappearing correctly while newer
+// tick/visibility changes silently vanished.
+//
+// A plain POSIX signal handler runs in a very restricted context: it can
+// preempt any code, including Qt internals, at essentially any point, so
+// it must not call anything that isn't async-signal-safe (this rules out
+// virtually all of Qt, malloc, etc.). The standard fix is a "self-pipe":
+// the handler does nothing but write a single byte to one end of a
+// socket pair with write(2) (which is async-signal-safe); a
+// QSocketNotifier watching the other end then wakes the Qt event loop
+// and runs the real handling code (handleUnixSignal()) as perfectly
+// ordinary, safe Qt code once control is back in the event loop.
+void CuteChessApplication::installSignalHandlers()
+{
+	if (::socketpair(AF_UNIX, SOCK_STREAM, 0, m_signalFd))
+	{
+		qWarning("Couldn't create signal handler socket pair");
+		return;
+	}
+
+	m_signalNotifier = new QSocketNotifier(m_signalFd[1], QSocketNotifier::Read, this);
+	connect(m_signalNotifier, SIGNAL(activated(int)), this, SLOT(handleUnixSignal()));
+
+	struct sigaction action;
+	std::memset(&action, 0, sizeof(action));
+	action.sa_handler = CuteChessApplication::unixSignalHandler;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = SA_RESTART;
+
+	sigaction(SIGTERM, &action, nullptr);
+	sigaction(SIGINT, &action, nullptr);
+	sigaction(SIGHUP, &action, nullptr);
+}
+
+// Async-signal-safe: the only thing done here is a single write(2) to
+// the self-pipe. Everything else happens later in handleUnixSignal(),
+// back on the Qt event loop.
+void CuteChessApplication::unixSignalHandler(int signalNumber)
+{
+	char signalByte = static_cast<char>(signalNumber);
+	ssize_t written = ::write(m_signalFd[0], &signalByte, sizeof(signalByte));
+	(void)written;
+}
+
+// Runs on the Qt event loop once unixSignalHandler() has woken
+// m_signalNotifier. Drains the byte(s) from the pipe and then quits via
+// exactly the same path as the Quit menu action, so closeEvent() and
+// aboutToQuit() -- and therefore the settings save in onAboutToQuit() --
+// run normally instead of the process just disappearing.
+void CuteChessApplication::handleUnixSignal()
+{
+	m_signalNotifier->setEnabled(false);
+
+	char buffer[16];
+	while (::read(m_signalFd[1], buffer, sizeof(buffer)) > 0)
+		;
+
+	m_signalNotifier->setEnabled(true);
+
+	onQuitAction();
+}
+#endif
+
+// Applies the user-requested global look: mid-cream window backgrounds,
+// and headings/labels rendered bold and ~1.5px larger than the platform
+// default.
+//
+// LOG: background colour used to be done with a stylesheet rule scoped
+// to "QMainWindow, QDialog, QWidget#centralWidget". That missed most of
+// the app's actual windows: the dockable panels (Moves, Tags, White's/
+// Black's evaluation, Evaluation history, Engine Debug) are QDockWidgets,
+// not QMainWindow/QDialog, so they -- and their floating/undocked state,
+// which are real top-level windows -- stayed at the default background.
+// Worse, the item views inside those docks (QTableView/QTreeView for
+// Moves, Tags, the eval tables) and the EvalHistory QCustomPlot don't
+// take their background from a stylesheet "background-color" rule at
+// all: QAbstractItemView paints its viewport from QPalette::Base, and
+// EvalHistory explicitly does
+// `m_plot->setBackground(QApplication::palette().window())`
+// (see evalhistory.cpp) -- i.e. it reads the *palette*, which the old
+// code never touched, only the stylesheet. That's why those panels kept
+// showing plain white regardless of the stylesheet rule.
+//
+// Fix: set the mid-cream colour on the application QPalette (Window and
+// Base, plus a slightly darker AlternateBase so alternating table rows
+// stay visible) instead of only via a stylesheet. Every widget that
+// doesn't override its own palette -- QMainWindow, QDialog, QDockWidget
+// (docked or floating), QTableView/QTreeView/QListView viewports, menus,
+// combo/list popups, etc. -- inherits this automatically, and it's also
+// what EvalHistory's QCustomPlot reads. The stylesheet is now only used
+// for the bold/larger heading rules, which QSS can express fine.
+//
+// LOG / TODO for a future session: QSS can't express "current size +
+// 1.5px" directly, since it has no relative unit and no access to
+// per-widget inherited sizes at parse time -- it can only set an
+// absolute font-size. What's done here is a reasonable approximation:
+// we read the *application's* default font pixel size once at startup
+// (via QFontInfo) and bake basePixelSize + 1.5, rounded, into the
+// stylesheet as an absolute px value for QLabel / group box titles /
+// dialog titles / header views / tab labels. This will drift from
+// "current size + 1.5px" for any individual widget that already has a
+// non-default font size set in code or in a .ui file (there are a
+// handful of those, e.g. the monospace font in
+// TournamentResultsDialog, which deliberately isn't touched here).
+// A more precise version would walk the widget tree after each dialog
+// is constructed and bump each heading/label's *own* pointSizeF by the
+// mm-accurate equivalent of 1.5px for that widget's screen, rather than
+// using one global absolute value.
+// WINDOWS PATCH: the palette/stylesheet fix below is exactly the kind of
+// thing Qt's native "windowsvista" QStyle ignores for QMenu. On Windows,
+// QMenu (and its checkable/tick-box items in particular) is painted by
+// asking uxtheme.dll to draw the OS's own menu theme parts directly --
+// it does not consult QPalette::Window/Text/HighlightedText at all, and
+// a stylesheet rule that only targets "QWidget" (as used above) isn't
+// enough to force QMenu out of that native code path. The result: this
+// app forces a fixed dark (#202020) text colour via the palette/QSS
+// above, but the *background* still comes straight from the Windows
+// theme -- so on a system with a dark Windows theme/menu colour, menus
+// (including the tick-box/checkable ones the Linux fix targeted) end up
+// with our forced dark text sitting on the OS's own dark background:
+// the same "black text on black background" bug, just via a different
+// mechanism than on Linux, and one the Linux-focused QPalette fix can't
+// reach.
+//
+// Fix: on Windows only, switch the application to the "Fusion" QStyle
+// before the palette is applied. Fusion is a Qt-drawn (not native-theme)
+// style that fully respects QPalette and QSS for every widget, menus
+// included, the same way the Linux styles already did -- so the exact
+// same palette/stylesheet fix below now actually reaches Windows menus
+// and their tick boxes too. This is done here, right before the palette
+// is built and set, so the new style picks up our custom colours from
+// the very first paint rather than briefly flashing native colours.
+#ifdef Q_OS_WIN32
+static void forceFusionStyleForReliablePaletteSupport()
+{
+	QStyle* fusion = QStyleFactory::create("Fusion");
+	if (fusion)
+		QApplication::setStyle(fusion);
+}
+#endif
+
+void CuteChessApplication::applyCustomAppearance()
+{
+#ifdef Q_OS_WIN32
+	forceFusionStyleForReliablePaletteSupport();
+#endif
+
+	const QColor midCream = boardBackgroundColor();
+	const QColor midCreamAlternate = midCream.darker(105);
+
+	// NOTE: only the background-family roles (Window/Base/AlternateBase/
+	// Button) were ever set here. The foreground/text roles (WindowText,
+	// Text, ButtonText) were left untouched, so they still come from
+	// whatever the platform theme provides. On a session where the
+	// platform theme's default text colour happens to be light (e.g. a
+	// dark GTK/Qt platform theme), that leaves light/white text sitting
+	// on this light cream background -- unreadable. Force a fixed dark
+	// text colour on all three foreground roles so the theme is always
+	// self-consistent regardless of the platform default.
+	const QColor darkText(0x20, 0x20, 0x20);
+
+	QPalette pal = palette();
+	pal.setColor(QPalette::Window, midCream);
+	pal.setColor(QPalette::Base, midCream);
+	pal.setColor(QPalette::AlternateBase, midCreamAlternate);
+	pal.setColor(QPalette::Button, midCream);
+	pal.setColor(QPalette::WindowText, darkText);
+	pal.setColor(QPalette::Text, darkText);
+	pal.setColor(QPalette::ButtonText, darkText);
+	setPalette(pal);
+
+	QFontInfo baseInfo(font());
+	int basePx = baseInfo.pixelSize();
+	if (basePx <= 0)
+		basePx = qRound(baseInfo.pointSizeF() * 96.0 / 72.0);
+	int headingPx = basePx + 2; // ~1.5px, rounded up to a whole px
+
+	QString sheet = QString(
+		// Belt-and-braces alongside the palette change above: some
+		// styles/widgets read text colour from the stylesheet in
+		// preference to the palette, so state it here too, in
+		// addition to (not instead of) the palette fix, to guarantee
+		// legible bold black text regardless of platform theme.
+		"QWidget {"
+		"  color: #202020;"
+		"  font-weight: bold;"
+		"}"
+		"QLabel {"
+		"  font-weight: bold;"
+		"  font-size: %1px;"
+		"}"
+		"QGroupBox::title {"
+		"  font-weight: bold;"
+		"  font-size: %1px;"
+		"}"
+		"QHeaderView::section {"
+		"  font-weight: bold;"
+		"  font-size: %1px;"
+		"}"
+		"QTabBar::tab {"
+		"  font-weight: bold;"
+		"  font-size: %1px;"
+		"}"
+	).arg(QString::number(headingPx));
+
+	setStyleSheet(sheet);
+}
+
+QColor CuteChessApplication::boardBackgroundColor() const
+{
+	// Historical default: the mid-cream #EFE6C8 that used to be
+	// hard-coded in three places (here, GraphicsBoard's wall
+	// colour, and BoardView's background brush). Now user
+	// configurable from the Settings dialog's General tab.
+	QSettings s;
+	int r = s.value("ui/board_bg_color_r", 0xef).toInt();
+	int g = s.value("ui/board_bg_color_g", 0xe6).toInt();
+	int b = s.value("ui/board_bg_color_b", 0xc8).toInt();
+	return QColor(qBound(0, r, 255), qBound(0, g, 255), qBound(0, b, 255));
+}
+
+void CuteChessApplication::setBoardBackgroundColor(const QColor& color)
+{
+	QSettings s;
+	s.setValue("ui/board_bg_color_r", color.red());
+	s.setValue("ui/board_bg_color_g", color.green());
+	s.setValue("ui/board_bg_color_b", color.blue());
+
+	// Re-derives the palette/stylesheet from the new colour.
+	applyCustomAppearance();
+
+	emit boardBackgroundColorChanged(color);
+}
+
+QColor CuteChessApplication::lightSquareColor() const
+{
+	// Historical default: the light tan #FFCE9E that used to be
+	// hard-coded in GraphicsBoard's constructor. Now user
+	// configurable from the Settings dialog's General tab.
+	QSettings s;
+	int r = s.value("ui/board_light_square_color_r", 0xff).toInt();
+	int g = s.value("ui/board_light_square_color_g", 0xce).toInt();
+	int b = s.value("ui/board_light_square_color_b", 0x9e).toInt();
+	return QColor(qBound(0, r, 255), qBound(0, g, 255), qBound(0, b, 255));
+}
+
+QColor CuteChessApplication::darkSquareColor() const
+{
+	// Historical default: the brown #D18B47 that used to be
+	// hard-coded in GraphicsBoard's constructor. Now user
+	// configurable from the Settings dialog's General tab.
+	QSettings s;
+	int r = s.value("ui/board_dark_square_color_r", 0xd1).toInt();
+	int g = s.value("ui/board_dark_square_color_g", 0x8b).toInt();
+	int b = s.value("ui/board_dark_square_color_b", 0x47).toInt();
+	return QColor(qBound(0, r, 255), qBound(0, g, 255), qBound(0, b, 255));
+}
+
+void CuteChessApplication::setLightSquareColor(const QColor& color)
+{
+	QSettings s;
+	s.setValue("ui/board_light_square_color_r", color.red());
+	s.setValue("ui/board_light_square_color_g", color.green());
+	s.setValue("ui/board_light_square_color_b", color.blue());
+
+	emit lightSquareColorChanged(color);
+}
+
+void CuteChessApplication::setDarkSquareColor(const QColor& color)
+{
+	QSettings s;
+	s.setValue("ui/board_dark_square_color_r", color.red());
+	s.setValue("ui/board_dark_square_color_g", color.green());
+	s.setValue("ui/board_dark_square_color_b", color.blue());
+
+	emit darkSquareColorChanged(color);
+}
+
+bool CuteChessApplication::showBoardCoordinates() const
+{
+	// Defaults to on, matching Cute Chess's historical appearance.
+	// User configurable from the Settings dialog's General tab.
+	QSettings s;
+	return s.value("ui/show_board_coordinates", true).toBool();
+}
+
+void CuteChessApplication::setShowBoardCoordinates(bool show)
+{
+	QSettings s;
+	s.setValue("ui/show_board_coordinates", show);
+
+	emit showBoardCoordinatesChanged(show);
+}
+
+CuteChessApplication::~CuteChessApplication()
+{
+	delete m_gameDatabaseDialog;
+	delete m_settingsDialog;
+	delete m_tournamentResultsDialog;
+	delete m_gameWall;
+
+#ifndef Q_OS_WIN32
+	delete m_signalNotifier;
+	::close(m_signalFd[0]);
+	::close(m_signalFd[1]);
+#endif
+}
+
+CuteChessApplication* CuteChessApplication::instance()
+{
+	return static_cast<CuteChessApplication*>(QApplication::instance());
+}
+
+QString CuteChessApplication::userName()
+{
+	#ifdef Q_OS_WIN32
+	return qgetenv("USERNAME");
+	#else
+	if (QSettings().value("ui/use_full_user_name", true).toBool())
+	{
+		auto pwd = getpwnam(qgetenv("USER"));
+		if (pwd != nullptr)
+			return QString(pwd->pw_gecos).split(',')[0];
+	}
+	return qgetenv("USER");
+	#endif
+}
+
+QString CuteChessApplication::configPath()
+{
+	// We want to have the exact same config path in "gui" and
+	// "cli" applications so that they can share resources
+	QSettings settings;
+	QFileInfo fi(settings.fileName());
+	QDir dir(fi.absolutePath());
+
+	if (!dir.exists())
+		dir.mkpath(fi.absolutePath());
+
+	return fi.absolutePath();
+}
+
+EngineManager* CuteChessApplication::engineManager()
+{
+	if (m_engineManager == nullptr)
+		m_engineManager = new EngineManager(this);
+
+	return m_engineManager;
+}
+
+GameManager* CuteChessApplication::gameManager()
+{
+	if (m_gameManager == nullptr)
+	{
+		m_gameManager = new GameManager(this);
+		int concurrency = QSettings()
+			.value("tournament/concurrency", 1).toInt();
+		m_gameManager->setConcurrency(concurrency);
+	}
+
+	return m_gameManager;
+}
+
+QList<MainWindow*> CuteChessApplication::gameWindows()
+{
+	m_gameWindows.removeAll(nullptr);
+
+	QList<MainWindow*> gameWindowList;
+	const auto gameWindows = m_gameWindows;
+	for (const auto& window : gameWindows)
+		gameWindowList << window.data();
+
+	return gameWindowList;
+}
+
+MainWindow* CuteChessApplication::newGameWindow(ChessGame* game)
+{
+	MainWindow* mainWindow = new MainWindow(game);
+	m_gameWindows.prepend(mainWindow);
+	mainWindow->show();
+	m_initialWindowCreated = true;
+
+	return mainWindow;
+}
+
+void CuteChessApplication::newDefaultGame()
+{
+	// default game is a human versus human game using standard variant and
+	// infinite time control
+	ChessGame* game = new ChessGame(Chess::BoardFactory::create("standard"),
+		new PgnGame());
+
+	game->setTimeControl(TimeControl("inf"));
+	game->pause();
+
+	connect(game, SIGNAL(started(ChessGame*)),
+		this, SLOT(newGameWindow(ChessGame*)));
+
+	gameManager()->newGame(game,
+			       new HumanBuilder(userName()),
+			       new HumanBuilder(userName()));
+}
+
+void CuteChessApplication::showGameWindow(int index)
+{
+	auto gameWindow = m_gameWindows.at(index);
+	gameWindow->activateWindow();
+	gameWindow->raise();
+}
+
+GameDatabaseManager* CuteChessApplication::gameDatabaseManager()
+{
+	if (m_gameDatabaseManager == nullptr)
+		m_gameDatabaseManager = new GameDatabaseManager(this);
+
+	return m_gameDatabaseManager;
+}
+
+void CuteChessApplication::showSettingsDialog()
+{
+	if (m_settingsDialog == nullptr)
+		m_settingsDialog = new SettingsDialog();
+
+	showDialog(m_settingsDialog);
+}
+
+void CuteChessApplication::showTournamentResultsDialog()
+{
+	showDialog(tournamentResultsDialog());
+}
+
+TournamentResultsDialog*CuteChessApplication::tournamentResultsDialog()
+{
+	if (m_tournamentResultsDialog == nullptr)
+		m_tournamentResultsDialog = new TournamentResultsDialog();
+
+	return m_tournamentResultsDialog;
+}
+
+void CuteChessApplication::showGameDatabaseDialog()
+{
+	if (m_gameDatabaseDialog == nullptr)
+		m_gameDatabaseDialog = new GameDatabaseDialog(gameDatabaseManager());
+
+	showDialog(m_gameDatabaseDialog);
+}
+
+void CuteChessApplication::showGameWall()
+{
+	if (m_gameWall == nullptr)
+	{
+		m_gameWall = new GameWall(gameManager());
+		auto flags = m_gameWall->windowFlags();
+		m_gameWall->setWindowFlags(flags | Qt::Window);
+		m_gameWall->setAttribute(Qt::WA_DeleteOnClose, true);
+		m_gameWall->setWindowTitle(tr("Active Games"));
+	}
+
+	showDialog(m_gameWall);
+}
+
+void CuteChessApplication::onQuitAction()
+{
+	closeDialogs();
+	closeAllWindows();
+}
+
+void CuteChessApplication::onLastWindowClosed()
+{
+	if (!m_initialWindowCreated)
+		return;
+
+	if (m_gameManager != nullptr)
+	{
+		connect(m_gameManager, SIGNAL(finished()), this, SLOT(quit()));
+		m_gameManager->finish();
+	}
+	else
+		quit();
+}
+
+void CuteChessApplication::recordMainWindowGeometry(const QByteArray& geometry,
+						      const QByteArray& windowState,
+						      const QVariantMap& dockVisibility)
+{
+	m_pendingMainWindowGeometry = geometry;
+	m_pendingMainWindowState = windowState;
+	m_pendingDockVisibility = dockVisibility;
+	m_hasPendingMainWindowGeometry = true;
+}
+
+void CuteChessApplication::onAboutToQuit()
+{
+	if (gameDatabaseManager()->isModified())
+		gameDatabaseManager()->writeState(configPath() + QLatin1String("/gamedb.bin"));
+
+	// This is the very last point in the application's life: every
+	// window has already closed (aboutToQuit() only fires once the
+	// event loop is unwinding for the final time) and nothing further
+	// will run afterwards that could clobber what we're about to write.
+	//
+	// Earlier attempts wrote the main window's geometry to QSettings
+	// from MainWindow::closeEvent() instead. That write landed on disk
+	// fine, but closeEvent() does not run at the end of the
+	// application's life -- it runs while windows are still being torn
+	// down, with the event loop still very much alive and other
+	// deferred/queued slots (tournament/game-manager shutdown, further
+	// closeEvent()s on sibling windows, etc.) still to run afterwards.
+	// If any of that later code touched a QSettings object for
+	// anything -- even something unrelated to window geometry -- Qt's
+	// shared per-file settings cache meant its eventual sync() could
+	// silently carry stale (pre-close) geometry back over the value we
+	// had just written, effectively resetting the saved position.
+	//
+	// By only ever staging the geometry in memory (see
+	// recordMainWindowGeometry(), called from MainWindow as it closes)
+	// and performing the actual write here, there is no longer any
+	// window in which something else can re-save stale settings after
+	// we've saved the real ones.
+	if (m_hasPendingMainWindowGeometry)
+	{
+		QSettings s;
+		s.beginGroup("ui");
+		s.beginGroup("mainwindow");
+
+		s.setValue("geometry", m_pendingMainWindowGeometry);
+		s.setValue("window_state", m_pendingMainWindowState);
+
+		s.endGroup();
+
+		// Each View-menu dock's ticked/visible state is also saved as
+		// its own plain boolean, separately from "window_state" above.
+		// See recordMainWindowGeometry()'s doc comment for why: the
+		// combined saveState()/restoreState() blob is all-or-nothing,
+		// so relying on it alone for dock visibility means a single
+		// mismatch (e.g. a dock added/removed/renamed by an upgrade,
+		// or a corrupted value) silently throws away every dock's
+		// ticked state, even though the plain "geometry" value above
+		// is completely unaffected and keeps restoring the window's
+		// position/size correctly. That mismatch between "the window
+		// comes back in the right place" and "none of the docks are
+		// where they were left" is exactly what these separate,
+		// independently-restorable booleans avoid.
+		s.beginGroup("docks");
+		for (auto it = m_pendingDockVisibility.constBegin();
+		     it != m_pendingDockVisibility.constEnd(); ++it)
+		{
+			s.setValue(it.key(), it.value());
+		}
+		s.endGroup();
+
+		s.endGroup();
+		s.sync();
+	}
+}
+
+void CuteChessApplication::showDialog(QWidget* dlg)
+{
+	Q_ASSERT(dlg != nullptr);
+
+	if (dlg->isMinimized())
+		dlg->showNormal();
+	else
+		dlg->show();
+
+	dlg->raise();
+	dlg->activateWindow();
+}
+
+void CuteChessApplication::closeDialogs()
+{
+	if (m_tournamentResultsDialog)
+		m_tournamentResultsDialog->close();
+	if (m_gameDatabaseDialog)
+		m_gameDatabaseDialog->close();
+	if (m_settingsDialog)
+		m_settingsDialog->close();
+	if (m_gameWall)
+		m_gameWall->close();
+}

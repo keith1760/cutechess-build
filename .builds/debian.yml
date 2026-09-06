@@ -1,0 +1,22 @@
+image: debian/stable
+packages:
+  - cmake
+  - qt6-base-dev
+  - qt6-svg-dev
+  - qt6-base-dev-tools
+  - mandoc
+sources:
+  - https://git.sr.ht/~artoj/cutechess
+tasks:
+  - build: |
+      cd cutechess
+      export LANG=C.UTF-8
+      cmake -S . -B build
+      cmake --build build
+  - test: |
+      cd cutechess
+      ctest --test-dir build
+  - test_manuals: |
+      cd cutechess/docs
+      mandoc -T lint cutechess-cli.6
+      mandoc -T lint cutechess-engines.json.5

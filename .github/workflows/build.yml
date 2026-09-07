@@ -1,0 +1,99 @@
+name: build cutechess
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions: {}
+
+env:
+  RYZENADJ_VERSION: "v0.19.0"
+  RYZENADJ_ZIP_SHA256: "871734a2322ea61a0d83ea8373162d3e1ecf0411ba4eb7e6aec423f4b6b95b4f"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: "${{ matrix.os }} Qt ${{ matrix.qt_version }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-2022
+            qt_version: 6.8.3
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: install qt 6.x
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+        with:
+          version: ${{ matrix.qt_version }}
+
+      - name: build cute chess
+        shell: cmd
+        run: |
+          call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
+          cmake -S . -B build
+          cmake --build build --config release
+
+      - name: run unit tests
+        shell: cmd
+        run: |
+          call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
+          ctest --test-dir build
+
+      - name: stage a clean, self-contained output folder
+        shell: cmd
+        run: |
+          mkdir winpkg
+          copy build\Release\cutechess.exe winpkg\CutechessWindowsEvalBarFix.exe
+          copy build\Release\cutechess-cli.exe winpkg\cutechess-cli.exe
+          copy COPYING winpkg\COPYING.txt
+          if exist docs\cutechess-cli.6.html copy docs\cutechess-cli.6.html winpkg\
+          if exist docs\cutechess-engines.json.5.html copy docs\cutechess-engines.json.5.html winpkg\
+
+      - name: deploy qt runtime + msvc compiler runtime dependencies
+        shell: cmd
+        run: |
+          call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessWindowsEvalBarFix.exe
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\cutechess-cli.exe
+          rem windeployqt's --compiler-runtime only drops in the vc_redist.x64.exe
+          rem *installer*, not something a "just unzip and run" portable folder
+          rem can use. Copy the actual redistributable runtime DLLs (vcruntime140.dll,
+          rem msvcp140.dll, etc.) straight from the VS toolchain's own redist folder
+          rem instead -- this is Microsoft's documented, license-compliant way to
+          rem privately redistribute those DLLs alongside an application.
+          copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" winpkg\
+
+      - name: verify msvc runtime dlls were bundled
+        shell: cmd
+        run: |
+          if not exist winpkg\vcruntime140.dll (echo ERROR: vcruntime140.dll missing from winpkg && exit /b 1)
+          if not exist winpkg\msvcp140.dll (echo ERROR: msvcp140.dll missing from winpkg && exit /b 1)
+          echo MSVC runtime DLLs confirmed present.
+
+      - name: download and verify ryzenadj (windows x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://github.com/FlyGoat/RyzenAdj/releases/download/$env:RYZENADJ_VERSION/ryzenadj-win64.zip" -OutFile ryzenadj-win64.zip
+          $hash = (Get-FileHash -Algorithm SHA256 -Path ryzenadj-win64.zip).Hash.ToLower()
+          if ($hash -ne $env:RYZENADJ_ZIP_SHA256) {
+            throw "RyzenAdj download checksum mismatch: expected $env:RYZENADJ_ZIP_SHA256, got $hash"
+          }
+          Expand-Archive -Path ryzenadj-win64.zip -DestinationPath winpkg\RyzenAdj -Force
+          Write-Host "RyzenAdj $env:RYZENADJ_VERSION verified and extracted to winpkg\RyzenAdj"
+
+      - name: upload windows executable artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: CutechessWindowsEvalBarFix
+          path: winpkg/
+          if-no-files-found: error

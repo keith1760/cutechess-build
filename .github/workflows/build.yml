@@ -6,7 +6,8 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
-permissions: {}
+permissions:
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -87,3 +88,25 @@ jobs:
           name: CutechessWindowsEvalBarFix
           path: winpkg/
           if-no-files-found: error
+
+      - name: zip the self-contained folder for release
+        shell: bash
+        run: |
+          cd winpkg && zip -r ../CutechessWindows12-09-2026.zip . && cd ..
+
+      - name: zip a standalone copy of the source code
+        shell: bash
+        run: |
+          git archive --format=zip --prefix=CutechessWindows12-09-2026-source/ -o CutechessWindows12-09-2026-source.zip HEAD
+
+      - name: publish as a github release so assets are downloadable
+        shell: bash
+        run: |
+          TAG="winbuild-${{ github.run_id }}"
+          gh release create "$TAG" \
+            --title "Cutechess Windows build (${{ github.run_id }})" \
+            --notes "Self-contained Windows build of Cutechess (exe + Qt6/MSVC runtime deps) plus a standalone copy of the source code." \
+            CutechessWindows12-09-2026.zip \
+            CutechessWindows12-09-2026-source.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -84,9 +84,9 @@ jobs:
           if-no-files-found: error
 
       - name: zip the self-contained folder for release
-        shell: bash
+        shell: pwsh
         run: |
-          cd winpkg && zip -r ../CutechessWindows12-09-2026.zip . && cd ..
+          Compress-Archive -Path winpkg\* -DestinationPath CutechessWindows12-09-2026.zip -Force
 
       - name: zip a standalone copy of the source code
         shell: bash

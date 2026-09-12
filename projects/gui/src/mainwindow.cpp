@@ -579,7 +579,68 @@ void MainWindow::showEvent(QShowEvent* event)
 void MainWindow::restoreSavedGeometry()
 {
 	applySavedGeometry();
+
+	// The final job of startup: make sure the View menu's restored
+	// state actually matches what was backed up at the last clean
+	// close, restoring from that backup if not. See
+	// verifyViewMenuAgainstBackup()'s doc comment in mainwindow.h.
+	verifyViewMenuAgainstBackup();
+
 	m_settingsRestored = true;
+}
+
+void MainWindow::verifyViewMenuAgainstBackup()
+{
+	QSettings s;
+	s.beginGroup("ui");
+	s.beginGroup("mainwindow");
+	s.beginGroup("docks_backup");
+	QStringList backupKeys = s.childKeys();
+
+	// Nothing to compare against -- either this is the very first run,
+	// or the last session never reached CuteChessApplication::
+	// onQuitAction() (backupViewMenuState()) to write one. Leave
+	// whatever applySavedGeometry() just restored alone.
+	if (backupKeys.isEmpty())
+	{
+		s.endGroup();
+		s.endGroup();
+		s.endGroup();
+		return;
+	}
+
+	QVariantMap backup;
+	for (const QString& key : backupKeys)
+		backup.insert(key, s.value(key));
+	s.endGroup();
+	s.endGroup();
+	s.endGroup();
+
+	const QVariantMap current = dockVisibilityMap();
+
+	bool changed = false;
+	for (auto it = backup.constBegin(); it != backup.constEnd(); ++it)
+	{
+		if (!current.contains(it.key())
+		||  current.value(it.key()).toBool() != it.value().toBool())
+		{
+			changed = true;
+			break;
+		}
+	}
+
+	if (!changed)
+		return;
+
+	// At least one dock's ticked state doesn't match the backup taken
+	// when the program was last closed -- restore every dock from that
+	// backup so the View menu ends up exactly as the user left it.
+	for (QDockWidget* dock : m_dockWidgets)
+	{
+		const QString key = dock->objectName();
+		if (backup.contains(key))
+			dock->setVisible(backup.value(key).toBool());
+	}
 }
 
 void MainWindow::stageGeometryForShutdown()
@@ -800,8 +861,17 @@ void MainWindow::setCurrentGame(const TabData& gameData)
 		m_evalWidgets[i]->setPlayer(player);
 	}
 
-	if (m_game->boardShouldBeFlipped())
-		m_gameViewer->boardScene()->flip();
+	// Use setFlipped() (absolute) rather than a manual isFlipped()
+	// comparison + flip(). m_gameViewer->setGame() above just reset
+	// this BoardScene's squares layer to unflipped internally
+	// (setBoard()/populate()) without telling anyone, so an
+	// isFlipped() check can no longer be trusted to reflect the
+	// board's real, displayed state. setFlipped() both applies the
+	// orientation this game wants and guarantees the eval bar (which
+	// only hears about orientation via BoardScene::flipped()) is
+	// told the true current state even when no actual flip animation
+	// is needed -- see the header comment on BoardScene::setFlipped().
+	m_gameViewer->boardScene()->setFlipped(m_game->boardShouldBeFlipped());
 
 	updateMenus();
 	updateWindowTitle();

@@ -102,6 +102,28 @@ class BoardScene : public QGraphicsScene
 		/*! Flips the board, with animation. */
 		void flip();
 		/*!
+		 * Sets the board's flipped state to \a flipped (absolute),
+		 * flipping (with animation) only if that's actually a
+		 * change from the current state.
+		 *
+		 * Unlike calling flip() conditionally on a comparison with
+		 * isFlipped(), this always re-emits flipped() with the
+		 * resulting state, even when no actual flip animation was
+		 * needed. That matters because setBoard()/populate() (used
+		 * to load a new game into a reused BoardScene) silently
+		 * reset the internal squares layer to its unflipped default
+		 * without emitting flipped() -- so a caller that skips
+		 * flip() merely because isFlipped() already happens to
+		 * match the desired state would leave anything listening
+		 * to flipped() (e.g. EvalBar) out of sync with the board
+		 * it's supposed to reflect. Callers that need to bring the
+		 * board's orientation in line with some desired/target
+		 * state (e.g. ChessGame::boardShouldBeFlipped()) after
+		 * possibly loading a new game should use this instead of
+		 * flip().
+		 */
+		void setFlipped(bool flipped);
+		/*!
 		 * Cancels any ongoing user move and flashes \a result
 		 * over the board.
 		 */

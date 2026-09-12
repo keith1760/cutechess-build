@@ -282,6 +282,93 @@ target_include_directories(gui PRIVATE
 target_link_libraries(gui Qt::Core Qt::Widgets Qt::Gui Qt::Concurrent Qt::Svg Qt::PrintSupport)
 target_link_libraries(gui lib)
 
+if(FALSE)
+add_executable(test_harness
+	projects/gui/src/boardview/graphicspiece.cpp
+	projects/gui/src/boardview/boardview.cpp
+	projects/gui/src/boardview/boardscene.cpp
+	projects/gui/src/boardview/graphicsboard.cpp
+	projects/gui/src/boardview/graphicspiecereserve.cpp
+	projects/gui/src/boardview/piecechooser.cpp
+
+	projects/gui/src/mainwindow.cpp
+	projects/gui/src/gameviewer.cpp
+	projects/gui/src/gamehistoryrecorder.cpp
+	projects/gui/src/engineconfigurationdlg.cpp
+	projects/gui/src/gamewall.cpp
+	projects/gui/src/engineconfigurationmodel.cpp
+	projects/gui/src/gamedatabasedlg.cpp
+	projects/gui/src/importprogressdlg.cpp
+	projects/gui/src/evalhistory.cpp
+	projects/gui/src/pgntoken.cpp
+	projects/gui/src/engineoptionmodel.cpp
+	projects/gui/src/stringvalidator.cpp
+	projects/gui/src/gamerepetitionspinbox.cpp
+	projects/gui/src/newgamedlg.cpp
+	projects/gui/src/threadedtask.cpp
+	projects/gui/src/tournamentresultsdlg.cpp
+	projects/gui/src/settingsdlg.cpp
+	projects/gui/src/enginemanagementwidget.cpp
+	projects/gui/src/engineconfigproxymodel.cpp
+	projects/gui/src/engineselectiondlg.cpp
+	projects/gui/src/pgntagsmodel.cpp
+	projects/gui/src/gamedatabasesearchdlg.cpp
+	projects/gui/src/evalwidget.cpp
+	projects/gui/src/evalbar.cpp
+	projects/gui/src/test_harness_main.cpp
+	projects/gui/src/gametabbar.cpp
+	projects/gui/src/pgngameentrymodel.cpp
+	projects/gui/src/pgndatabasemodel.cpp
+	projects/gui/src/movenumbertoken.cpp
+	projects/gui/src/newtournamentdialog.cpp
+	projects/gui/src/engineoptiondelegate.cpp
+	projects/gui/src/movetoken.cpp
+	projects/gui/src/autoverticalscroller.cpp
+	projects/gui/src/movecommenttoken.cpp
+	projects/gui/src/tilelayout.cpp
+	projects/gui/src/movelist.cpp
+	projects/gui/src/chessclock.cpp
+	projects/gui/src/gamesettingswidget.cpp
+	projects/gui/src/cutechessapp.cpp
+	projects/gui/src/plaintextlog.cpp
+	projects/gui/src/tournamentsettingswidget.cpp
+	projects/gui/src/gamedatabasemanager.cpp
+	projects/gui/src/pgndatabase.cpp
+	projects/gui/src/pathlineedit.cpp
+	projects/gui/src/pairtimecontroldlg.cpp
+	projects/gui/src/timecontroldlg.cpp
+	projects/gui/src/timecontrolwidget.cpp
+	projects/gui/src/pgnimporter.cpp
+
+	projects/gui/ui/settingsdlg.ui
+	projects/gui/ui/engineconfigdlg.ui
+	projects/gui/ui/pairtimecontroldlg.ui
+	projects/gui/ui/timecontroldlg.ui
+	projects/gui/ui/timecontrolwidget.ui
+	projects/gui/ui/engineselectiondlg.ui
+	projects/gui/ui/importprogressdlg.ui
+	projects/gui/ui/gamedatabasesearchdlg.ui
+	projects/gui/ui/tournamentsettingswidget.ui
+	projects/gui/ui/enginemanagementwidget.ui
+	projects/gui/ui/newgamedlg.ui
+	projects/gui/ui/gamedatabasedlg.ui
+	projects/gui/ui/gamesettingswidget.ui
+	projects/gui/ui/newtournamentdlg.ui
+
+	projects/gui/3rdparty/qcustomplot/qcustomplot.cpp
+
+	projects/gui/res/chessboard/chessboard.qrc
+	projects/gui/res/icons/icons.qrc
+)
+set_target_properties(test_harness PROPERTIES AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/projects/gui/ui)
+target_include_directories(test_harness PRIVATE
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/projects/gui/3rdparty/qcustomplot>
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/projects/gui/src>
+)
+target_link_libraries(test_harness Qt::Core Qt::Widgets Qt::Gui Qt::Concurrent Qt::Svg Qt::PrintSupport)
+target_link_libraries(test_harness lib)
+endif()
+
 if(WITH_TESTS)
 	macro(add_unit_test test_name test_src)
 		add_executable(test_${test_name} ${test_src})

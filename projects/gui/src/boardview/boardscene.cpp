@@ -247,6 +247,19 @@ bool BoardScene::isFlipped() const
 	return m_squares->isFlipped();
 }
 
+void BoardScene::setFlipped(bool shouldBeFlipped)
+{
+	if (shouldBeFlipped != m_squares->isFlipped())
+		flip();
+	else
+		// Already in the right state -- flip() (and its signal)
+		// won't fire, but anything listening to flipped() still
+		// needs to be told the current state explicitly, since
+		// setBoard()/populate() can silently reset it behind our
+		// back without emitting anything. See the header comment.
+		emit flipped(m_squares->isFlipped());
+}
+
 void BoardScene::flip()
 {
 	stopAnimation();

@@ -62,6 +62,19 @@ class MainWindow : public QMainWindow
 		virtual ~MainWindow();
 		QString windowListTitle() const;
 
+		/*!
+		 * Returns each View-menu dock widget's objectName() mapped to
+		 * whether it's currently ticked/visible.
+		 *
+		 * Exposed publicly (rather than kept private, as it was
+		 * before) so CuteChessApplication::backupViewMenuState() can
+		 * snapshot it the instant the user gives the close/quit
+		 * command -- see that method, and
+		 * verifyViewMenuAgainstBackup() below, for how the snapshot
+		 * is used again at the next startup.
+		 */
+		QVariantMap dockVisibilityMap() const;
+
 	public slots:
 		void addGame(ChessGame* game);
 
@@ -132,7 +145,25 @@ class MainWindow : public QMainWindow
 		QString formatEloDiff(qreal diff) const;
 		void applySavedGeometry();
 		void stageGeometryForShutdown();
-		QVariantMap dockVisibilityMap() const;
+
+		/*!
+		 * Compares the View menu's current ticked/visible dock state
+		 * (as just applied by applySavedGeometry() above) against the
+		 * backup snapshot taken by
+		 * CuteChessApplication::backupViewMenuState() the last time
+		 * the program was closed. If anything differs -- the normal
+		 * restore silently reverted a dock (see the restoreState()
+		 * fragility discussed in applySavedGeometry()), the settings
+		 * file was partially written or corrupted, or the last
+		 * session never reached a clean quit at all -- every dock is
+		 * reset to the backed-up value instead.
+		 *
+		 * This is deliberately the LAST thing done as part of
+		 * startup, called from restoreSavedGeometry() right after
+		 * applySavedGeometry(), so it has the final say over the View
+		 * menu's state and nothing later in startup can undo it.
+		 */
+		void verifyViewMenuAgainstBackup();
 		QString genericTitle(const TabData& gameData) const;
 		QString nameOnClock(const QString& name, Chess::Side side) const;
 		void lockCurrentGame();

@@ -306,6 +306,34 @@ void CuteChessApplication::applyCustomAppearance()
 		basePx = qRound(baseInfo.pointSizeF() * 96.0 / 72.0);
 	int headingPx = basePx + 2; // ~1.5px, rounded up to a whole px
 
+	// GameViewer wants two labels bumped even larger than the
+	// generic heading size below (the opening name and the live
+	// tournament score/Elo readout). Those used to be set via a
+	// plain QWidget::setFont() pixel size in gameviewer.cpp, plus a
+	// widget-local setStyleSheet() there intended to shield them
+	// from the generic "QLabel { font-size: ... }" rule below.
+	// That approach was unreliable in practice (the opening label
+	// picked up its intended size, the score label didn't) because
+	// mixing a QApplication-wide stylesheet with a widget-local one
+	// makes precedence depend on exactly when/how each widget is
+	// polished, which isn't something call sites should have to
+	// reason about. ID selectors resolved from a single stylesheet
+	// don't have that ambiguity -- of two rules in the same
+	// stylesheet, the more specific one (an ID selector beats a
+	// bare type selector) always wins, deterministically, so both
+	// labels are handled here instead, keyed off objectName().
+	int openingPx = basePx + 4;
+	// Bumped from "basePx + 3" to "basePx + 12": the previous increment
+	// was too small a jump from the generic QLabel size (set just above)
+	// to read as a deliberate size difference at a glance. This makes
+	// the live W-D-L / Elo-diff readout clearly larger than surrounding
+	// labels, the way the opening-name label already is.
+	// 2026-09-12 follow-up: basePx + 12 read as too large in practice.
+	// Dialed back by 2px, to basePx + 8, so the readout is still
+	// clearly bigger than surrounding labels but not as oversized as
+	// the previous bump made it.
+	int scorePx = basePx + 8;
+
 	QString sheet = QString(
 		// Belt-and-braces alongside the palette change above: some
 		// styles/widgets read text colour from the stylesheet in
@@ -332,7 +360,19 @@ void CuteChessApplication::applyCustomAppearance()
 		"  font-weight: bold;"
 		"  font-size: %1px;"
 		"}"
-	).arg(QString::number(headingPx));
+		// See the comment above: ID selectors beat the generic
+		// "QLabel" rule above regardless of polish/paint timing.
+		"QLabel#openingLabel {"
+		"  font-weight: bold;"
+		"  font-size: %2px;"
+		"}"
+		"QLabel#scoreLabel {"
+		"  font-weight: bold;"
+		"  font-size: %3px;"
+		"}"
+	).arg(QString::number(headingPx),
+	      QString::number(openingPx),
+	      QString::number(scorePx));
 
 	setStyleSheet(sheet);
 }
@@ -609,8 +649,43 @@ void CuteChessApplication::showGameWall()
 
 void CuteChessApplication::onQuitAction()
 {
+	backupViewMenuState();
 	closeDialogs();
 	closeAllWindows();
+}
+
+void CuteChessApplication::backupViewMenuState()
+{
+	MainWindow* window = nullptr;
+	for (MainWindow* w : gameWindows())
+	{
+		if (w != nullptr)
+		{
+			window = w;
+			break;
+		}
+	}
+	// No open window (nothing in the View menu to back up).
+	if (window == nullptr)
+		return;
+
+	const QVariantMap state = window->dockVisibilityMap();
+
+	QSettings s;
+	s.beginGroup("ui");
+	s.beginGroup("mainwindow");
+	s.beginGroup("docks_backup");
+	// Clear out any stale keys from a previous session's dock set
+	// before writing the fresh snapshot, the same way a corrupted or
+	// outdated set of keys shouldn't linger and be mistaken for part
+	// of today's backup.
+	s.remove("");
+	for (auto it = state.constBegin(); it != state.constEnd(); ++it)
+		s.setValue(it.key(), it.value());
+	s.endGroup();
+	s.endGroup();
+	s.endGroup();
+	s.sync();
 }
 
 void CuteChessApplication::onLastWindowClosed()

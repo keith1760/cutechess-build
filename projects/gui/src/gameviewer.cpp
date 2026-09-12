@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QSettings>
+#include <QFontInfo>
 #include <pgngame.h>
 #include <chessgame.h>
 #include <chessplayer.h>
@@ -99,9 +100,13 @@ GameViewer::GameViewer(Qt::Orientation orientation,
 	// bold. Updated in setGame(const PgnGame*) below. Hidden when
 	// there's no opening info yet, rather than showing an empty bar.
 	m_openingLabel = new QLabel(this);
-	QFont openingFont = m_openingLabel->font();
-	openingFont.setBold(true);
-	m_openingLabel->setFont(openingFont);
+	// Matched by the "QLabel#openingLabel" ID selector in
+	// CuteChessApplication::applyCustomAppearance(), which is what
+	// actually controls this label's font size -- see the comment
+	// there. Don't rely on setFont()/setStyleSheet() here, since a
+	// plain per-widget font size is silently overridden by the
+	// app-wide "QLabel { font-size: ... }" rule.
+	m_openingLabel->setObjectName("openingLabel");
 	m_openingLabel->setVisible(false);
 
 	m_viewFirstMoveBtn->setEnabled(false);
@@ -169,9 +174,10 @@ GameViewer::GameViewer(Qt::Orientation orientation,
 		// tournament in progress).
 		m_scoreLabel = new QLabel();
 		m_scoreLabel->setAlignment(Qt::AlignCenter);
-		QFont scoreFont = m_scoreLabel->font();
-		scoreFont.setBold(true);
-		m_scoreLabel->setFont(scoreFont);
+		// See the matching comment on m_openingLabel above: the
+		// font size is controlled entirely by the "QLabel#scoreLabel"
+		// ID selector in CuteChessApplication::applyCustomAppearance().
+		m_scoreLabel->setObjectName("scoreLabel");
 		m_scoreLabel->hide();
 
 		m_chessClock[1] = new ChessClock();

@@ -123,8 +123,14 @@ void GameWallWidget::setGame(ChessGame* game)
 	m_scene->setBoard(game->pgn()->createBoard());
 	m_scene->populate();
 
-	if (game->boardShouldBeFlipped())
-		m_scene->flip();
+	// Use setFlipped() (absolute), not a manual isFlipped()
+	// comparison + flip(): setBoard()/populate() just above reset
+	// the scene's squares layer to unflipped behind the scenes, so
+	// an isFlipped() check here can no longer be trusted to reflect
+	// reality on its own. setFlipped() both brings the orientation
+	// in line with what this game wants and makes sure anything
+	// listening for orientation changes is told the true state.
+	m_scene->setFlipped(game->boardShouldBeFlipped());
 
 	for (const Chess::Move& move : game->moves())
 		m_scene->makeMove(move);

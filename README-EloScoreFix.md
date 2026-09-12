@@ -79,3 +79,52 @@ and reviewed carefully against the existing codebase (signal signatures,
 packages and CMake have since been installed and a build attempt is in
 progress — a follow-up package will include the compiled AppImage/binary
 once that's confirmed green.
+
+## 2026-09-12 update: build succeeded, and the score/Elo label's font size fix
+
+Qt6 (`qt6-base-dev`, `qt6-svg-dev`) and `cmake` installed cleanly this
+session (`archive.ubuntu.com`/`security.ubuntu.com` were reachable), so the
+tree above was actually compiled with `cmake --build .` for the first time.
+It built clean with no errors, confirming the review notes above.
+
+Separately, the live W/D/B + Elo-diff label above the board (`scoreLabel`,
+`GameViewer::scoreLabel()`/`MainWindow::updateTournamentScore()`) was
+reported as visually unchanged in size across earlier packages, despite
+`CuteChessApplication::applyCustomAppearance()` in
+`projects/gui/src/cutechessapp.cpp` already giving it its own
+`QLabel#scoreLabel` font-size rule (`basePx + 3`, versus `basePx` for a
+plain `QLabel`). That rule was verified to be live in the compiled binary
+(present in `strings` output of the previous AppImage's `cutechess`
+executable), so the mechanism was working — a 3px bump over body text is
+just too small a jump to read as intentional at a glance.
+
+Fix: in the same spot, `scorePx` is now `basePx + 12` instead of
+`basePx + 3`, so the readout is clearly larger than the surrounding clock
+labels rather than only marginally so. No other logic changed.
+
+```
+-int scorePx = basePx + 3;
++int scorePx = basePx + 12;
+```
+
+This was compiled and the resulting `cutechess` binary was smoke-tested
+(`--version`, and launching under `QT_QPA_PLATFORM=offscreen` against the
+AppImage's bundled Qt 6.4.2 libraries) before being packaged into the
+AppImage, so this is a compiled, run-tested build — not just a source-level
+review like the note above.
+
+## 2026-09-12 follow-up: scale the score/Elo label back down by 2px
+
+The `basePx + 12` bump above made the live W-D-L / Elo-diff readout larger
+than intended. `scorePx` in `CuteChessApplication::applyCustomAppearance()`
+(`projects/gui/src/cutechessapp.cpp`) is now `basePx + 8`, i.e. 2px smaller
+than the previous patch produced, while still staying well above the
+`basePx + 3` starting point so the readout reads as deliberately larger than
+surrounding labels.
+
+```
+-int scorePx = basePx + 12;
++int scorePx = basePx + 8;
+```
+
+No other logic changed. Same build/packaging process as above.

@@ -237,6 +237,26 @@ class CuteChessApplication : public QApplication
 	private:
 		void showDialog(QWidget* dlg);
 		void applyCustomAppearance();
+
+		/*!
+		 * Snapshots the View menu's current ticked/visible dock state
+		 * to a separate "backup" set of QSettings keys, synced to
+		 * disk immediately. Called first thing from onQuitAction(),
+		 * i.e. the instant the user gives the close/quit command --
+		 * before closeDialogs(), closeAllWindows(), or any other part
+		 * of shutdown has run.
+		 *
+		 * This exists purely as a safety net alongside the normal
+		 * geometry/dock-visibility save in onAboutToQuit(): that save
+		 * only happens if the application reaches the very end of
+		 * aboutToQuit() cleanly. Taking a second snapshot at the
+		 * earliest possible moment means there is always a
+		 * known-good, pre-shutdown copy of the View menu's state on
+		 * disk, which MainWindow::verifyViewMenuAgainstBackup()
+		 * checks the next time the program starts and restores from
+		 * if the normal restore doesn't match it.
+		 */
+		void backupViewMenuState();
 #ifndef Q_OS_WIN32
 		void installSignalHandlers();
 #endif

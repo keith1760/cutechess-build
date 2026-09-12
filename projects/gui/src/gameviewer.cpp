@@ -271,6 +271,30 @@ void GameViewer::setGame(ChessGame* game)
 		m_evalBar, SLOT(onScoreChanged(int,int)));
 	m_evalBar->clear();
 
+	// WORKAROUND for the eval bar colours occasionally not matching
+	// the board in engine-vs-engine games -- see the doc comment on
+	// EvalBar::setEngineGameBottomColor() for the full story. Record,
+	// once per game, which side is moving up the board (i.e. sitting
+	// at the bottom, advancing toward the opponent) and pin the
+	// bar's colours to that directly, rather than trusting the live
+	// flip-tracking path, which is only really exercised by a human
+	// interactively flipping the board and has not proven reliable
+	// when nobody is doing that.
+	{
+		ChessPlayer* whitePlayer = m_game->player(Chess::Side::White);
+		ChessPlayer* blackPlayer = m_game->player(Chess::Side::Black);
+		bool engineGame = whitePlayer && blackPlayer
+				&& !whitePlayer->isHuman()
+				&& !blackPlayer->isHuman();
+		if (engineGame)
+		{
+			bool whiteMovingUp = !m_game->boardShouldBeFlipped();
+			m_evalBar->setEngineGameBottomColor(whiteMovingUp);
+		}
+		else
+			m_evalBar->clearEngineGameBottomColor();
+	}
+
 	for (int i = 0; i < 2; i++)
 	{
 		ChessPlayer* player(m_game->player(Chess::Side::Type(i)));

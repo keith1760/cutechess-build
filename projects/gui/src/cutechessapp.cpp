@@ -24,6 +24,10 @@
 #include <QFileInfo>
 #include <QSettings>
 #include <QFontInfo>
+#include <QFont>
+#include <QTextDocument>
+#include <QTextCursor>
+#include <QTextCharFormat>
 #include <QColor>
 #include <QPalette>
 #include <QStyle>
@@ -323,16 +327,50 @@ void CuteChessApplication::applyCustomAppearance()
 	// bare type selector) always wins, deterministically, so both
 	// labels are handled here instead, keyed off objectName().
 	int openingPx = basePx + 4;
-	// Bumped from "basePx + 3" to "basePx + 12": the previous increment
-	// was too small a jump from the generic QLabel size (set just above)
-	// to read as a deliberate size difference at a glance. This makes
-	// the live W-D-L / Elo-diff readout clearly larger than surrounding
-	// labels, the way the opening-name label already is.
-	// 2026-09-12 follow-up: basePx + 12 read as too large in practice.
-	// Dialed back by 2px, to basePx + 8, so the readout is still
-	// clearly bigger than surrounding labels but not as oversized as
-	// the previous bump made it.
-	int scorePx = basePx + 8;
+	// 2026-09-12: repeated relative-offset attempts here (basePx + 3,
+	// then + 12, then + 8), and then a fixed 10px, all kept landing
+	// wrong for one screen/DPI setup or another, since neither a
+	// "+N" offset nor a fixed guess can be pinned to the actual
+	// rendered size of the engine-name label in advance. That label
+	// (ChessClock::m_nameLabel, see chessclock.cpp) gets the plain
+	// "QLabel { font-size: headingPx }" rule below as its base font,
+	// then Qt's rich-text engine bumps it again for the "<h3>" markup
+	// it's wrapped in -- by an amount Qt doesn't expose as a fixed
+	// ratio, since it depends on the base font/DPI. Rather than
+	// guess that bump, ask Qt directly: build a throwaway
+	// QTextDocument with the identical base font and "<h3>" markup
+	// the engine-name label uses, and read back whatever pixel size
+	// Qt actually resolves it to. The W-D-L / Elo-diff readout (and
+	// any other win-draw-loss/Elo display, all of which route
+	// through this same "QLabel#scoreLabel" rule) is pinned to that
+	// resolved size, guaranteeing it stays pixel-identical to the
+	// engine-name font on any system/DPI instead of approximating it.
+	int scorePx;
+	{
+		QFont headingFont = font();
+		headingFont.setPixelSize(headingPx);
+		headingFont.setBold(true);
+
+		QTextDocument doc;
+		doc.setDefaultFont(headingFont);
+		doc.setHtml(QStringLiteral("<h3>Engine Name</h3>"));
+
+		QTextCursor cursor(&doc);
+		cursor.movePosition(QTextCursor::Start);
+		cursor.movePosition(QTextCursor::EndOfBlock,
+				    QTextCursor::KeepAnchor);
+		QTextCharFormat fmt = cursor.charFormat();
+
+		QFontInfo resolvedInfo(fmt.font());
+		scorePx = resolvedInfo.pixelSize();
+		if (scorePx <= 0)
+		{
+			scorePx = qRound(resolvedInfo.pointSizeF()
+					  * 96.0 / 72.0);
+		}
+		if (scorePx <= 0)
+			scorePx = headingPx;
+	}
 
 	QString sheet = QString(
 		// Belt-and-braces alongside the palette change above: some

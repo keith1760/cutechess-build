@@ -128,3 +128,56 @@ surrounding labels.
 ```
 
 No other logic changed. Same build/packaging process as above.
+
+## 2026-09-12 17:00 update: match the score/Elo font to the engine-name font exactly
+
+Previous passes (`basePx + 3`, `+12`, `+8`, then a hard-coded `10px`) were all
+guesses at a pixel size for the `QLabel#scoreLabel` rule. This pass instead
+makes the win-draw-loss/Elo readout match the engine-name font *exactly*,
+as requested.
+
+The engine names in engine-engine matches are drawn by
+`ChessClock::setPlayerName()` (`chessclock.cpp`) as `<h3>name</h3>` rich
+text inside `m_nameLabel`, a plain `QLabel` with no `objectName`, so it
+picks up the generic `QLabel { font-size: headingPx }` rule from
+`CuteChessApplication::applyCustomAppearance()`
+(`cutechessapp.cpp`) and Qt's rich-text engine then scales that up again
+for the `<h3>` tag by an amount Qt does not expose as a fixed ratio.
+
+`scorePx` is now computed, not guessed: a throwaway `QTextDocument` is
+built with the identical base font and `<h3>` markup the engine-name label
+uses, and the pixel size Qt actually resolves that text run to is read
+back and used directly for the `QLabel#scoreLabel` rule. Every
+win-draw-loss/Elo display in the app -- the live W-D-L/Elo-diff readout
+between the clocks (`GameViewer::m_scoreLabel`, `MainWindow::
+updateTournamentScore()`) -- routes through this one `QLabel#scoreLabel`
+rule, so this one change covers all of them, matching the single-rule
+comment already in the code.
+
+```
+-int scorePx = 10;
++int scorePx;
++{
++       QFont headingFont = font();
++       headingFont.setPixelSize(headingPx);
++       headingFont.setBold(true);
++
++       QTextDocument doc;
++       doc.setDefaultFont(headingFont);
++       doc.setHtml(QStringLiteral("<h3>Engine Name</h3>"));
++
++       QTextCursor cursor(&doc);
++       cursor.movePosition(QTextCursor::Start);
++       cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
++       QTextCharFormat fmt = cursor.charFormat();
++
++       QFontInfo resolvedInfo(fmt.font());
++       scorePx = resolvedInfo.pixelSize();
++       ...
++}
+```
+
+Compiled clean with `cmake --build .` against Qt 6.4.2 (`qt6-base-dev`,
+`qt6-svg-dev`, `qt6-multimedia-dev`), and the resulting `cutechess` binary
+was smoke-tested with `--version` under `QT_QPA_PLATFORM=offscreen` before
+being packaged into the AppImage.

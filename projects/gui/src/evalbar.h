@@ -90,6 +90,28 @@ class EvalBar : public QWidget
 		//! bottom regardless of orientation.
 		void setBlackAtBottomPreference(bool enabled);
 
+		//! WORKAROUND, not a real fix: for engine-vs-engine games,
+		//! the live BoardScene::flipped() signal (see
+		//! setBoardFlipped()) has been unreliable at keeping the
+		//! bar's colours matched to the board -- nothing is
+		//! interactively flipping the board in an engine-vs-engine
+		//! game, so the bug is in the signal/timing, not in the
+		//! user's orientation choice. Rather than continue chasing
+		//! that, this records the fact directly instead: call this
+		//! once per game with whichever side is moving up the
+		//! board (i.e. displayed at the bottom, advancing toward
+		//! the opponent), and the bar pins its bottom colour to
+		//! that side for the rest of the game, ignoring
+		//! setBoardFlipped()/setBlackAtBottomPreference() entirely
+		//! until clearEngineGameBottomColor() is called. Pass true
+		//! if White is moving up the board, false if Black is.
+		void setEngineGameBottomColor(bool whiteMovingUp);
+
+		//! Reverts to the normal, live-tracked behaviour driven by
+		//! setBoardFlipped() + setBlackAtBottomPreference(). Call
+		//! this for any game where at least one side is human.
+		void clearEngineGameBottomColor();
+
 	protected:
 		void paintEvent(QPaintEvent* event) override;
 
@@ -99,6 +121,8 @@ class EvalBar : public QWidget
 		bool m_hasScore;
 		bool m_boardFlipped;         // true: black at bottom of board
 		bool m_blackAtBottomPref;    // user setting, see header comment
+		bool m_engineOverrideActive; // true: use m_engineBottomIsWhite below
+		bool m_engineBottomIsWhite;  // recorded once per engine-vs-engine game
 
 		void updateWidthFromDpi();
 };

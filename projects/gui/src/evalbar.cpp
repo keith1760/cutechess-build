@@ -42,7 +42,9 @@ EvalBar::EvalBar(QWidget* parent)
 	  m_score(0),
 	  m_hasScore(false),
 	  m_boardFlipped(false),
-	  m_blackAtBottomPref(false)
+	  m_blackAtBottomPref(false),
+	  m_engineOverrideActive(false),
+	  m_engineBottomIsWhite(true)
 {
 	updateWidthFromDpi();
 	setMinimumHeight(40);
@@ -105,6 +107,22 @@ void EvalBar::setBlackAtBottomPreference(bool enabled)
 	update();
 }
 
+void EvalBar::setEngineGameBottomColor(bool whiteMovingUp)
+{
+	m_engineOverrideActive = true;
+	m_engineBottomIsWhite = whiteMovingUp;
+	update();
+}
+
+void EvalBar::clearEngineGameBottomColor()
+{
+	if (!m_engineOverrideActive)
+		return;
+
+	m_engineOverrideActive = false;
+	update();
+}
+
 void EvalBar::paintEvent(QPaintEvent*)
 {
 	QPainter painter(this);
@@ -123,7 +141,14 @@ void EvalBar::paintEvent(QPaintEvent*)
 	// showing black at the bottom right now (m_boardFlipped), in
 	// which case the strip is inverted so black's colour sits at
 	// the bottom too.
-	bool invert = m_blackAtBottomPref && m_boardFlipped;
+	//
+	// For engine-vs-engine games this whole live calculation is
+	// bypassed in favour of the recorded per-game fact set via
+	// setEngineGameBottomColor() -- see that method's doc comment
+	// in evalbar.h for why.
+	bool invert = m_engineOverrideActive
+		    ? !m_engineBottomIsWhite
+		    : (m_blackAtBottomPref && m_boardFlipped);
 
 	QRect blackRect, whiteRect;
 	if (!invert)

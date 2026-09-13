@@ -16,6 +16,8 @@ jobs:
   build:
     name: "${{ matrix.os }} Qt ${{ matrix.qt_version }}"
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -87,3 +89,18 @@ jobs:
           name: FINALFINALCUTECHESSWINDOWSDIFFERENTSOURCE
           path: FINALFINALCUTECHESSWINDOWSDIFFERENTSOURCE/
           if-no-files-found: error
+
+      - name: zip the self-contained folder
+        shell: pwsh
+        run: Compress-Archive -Path FINALFINALCUTECHESSWINDOWSDIFFERENTSOURCE -DestinationPath FINALFINALCUTECHESSWINDOWSDIFFERENTSOURCE.zip
+
+      - name: publish zip as a github release asset
+        shell: bash
+        run: |
+          TAG="winbuild-${GITHUB_RUN_ID}"
+          gh release create "$TAG" \
+            --title "Windows build ${GITHUB_RUN_ID}" \
+            --notes "Automated self-contained Windows build of commit ${GITHUB_SHA}." \
+            FINALFINALCUTECHESSWINDOWSDIFFERENTSOURCE.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -121,7 +121,6 @@ class MainWindow : public QMainWindow
 		void adjudicateBlackWin();
 		void resignGame();
 		void restoreSavedGeometry();
-		void saveDockVisibilityImmediately(bool visible);
 
 	private:
 		struct TabData
@@ -147,6 +146,39 @@ class MainWindow : public QMainWindow
 		void stageGeometryForShutdown();
 
 		/*!
+		 * Re-applies just the saved window rectangle (the same
+		 * bytes applySavedGeometry() already used), via
+		 * restoreGeometry(), with no other side effects.
+		 *
+		 * restoreState() and dock-visibility changes (either
+		 * inside applySavedGeometry() itself, or from
+		 * verifyViewMenuAgainstBackup() running afterwards) lay
+		 * out docks/toolbars, and that layout activation is free
+		 * to resize the main window to fit them -- particularly
+		 * with nested/split docks, whose stored splitter sizes
+		 * are re-proportioned against whatever the window's
+		 * *current* size happens to be at that moment. A height
+		 * the user chose that isn't backed by any dock's own
+		 * size hint (e.g. extra blank space above/below a fixed
+		 * set of docks) has nothing to preserve it through that
+		 * recalculation, so it quietly reverts to the docks'
+		 * combined preferred height -- a "preset" -- instead of
+		 * the saved one. Width is largely unaffected since the
+		 * docks in this layout are arranged in the right-hand
+		 * column, so it kept sticking while height didn't.
+		 *
+		 * Calling this once more, after every other piece of
+		 * startup that could touch the layout has already run,
+		 * is what actually guarantees "the geometry is put in
+		 * place just before the display is put on screen": it is
+		 * the last write, so nothing dock-layout-related gets to
+		 * overrule it. See restoreSavedGeometry() and
+		 * applySavedGeometry() for the two points this is called
+		 * from.
+		 */
+		void enforceSavedWindowGeometry();
+
+		/*!
 		 * Compares the View menu's current ticked/visible dock state
 		 * (as just applied by applySavedGeometry() above) against the
 		 * backup snapshot taken by
@@ -164,6 +196,18 @@ class MainWindow : public QMainWindow
 		 * menu's state and nothing later in startup can undo it.
 		 */
 		void verifyViewMenuAgainstBackup();
+
+		/*!
+		 * Immediately persists \a dock's ticked/visible state as
+		 * \a visible. Called only in response to a genuine user
+		 * tick/untick of \a dock's toggleViewAction() -- see the
+		 * long comment where this is connected, in
+		 * createDockWindows(), for why that (and not
+		 * QDockWidget::visibilityChanged()) is the right signal to
+		 * drive this.
+		 */
+		void saveDockVisibilityImmediately(QDockWidget* dock, bool visible);
+
 		QString genericTitle(const TabData& gameData) const;
 		QString nameOnClock(const QString& name, Chess::Side side) const;
 		void lockCurrentGame();
@@ -223,6 +267,44 @@ class MainWindow : public QMainWindow
 		// applySavedGeometry() -- independently of the fragile combined
 		// QMainWindow::saveState()/restoreState() blob.
 		QList<QDockWidget*> m_dockWidgets;
+
+		// The user's genuine last-known ticked/visible intent for each
+		// dock in m_dockWidgets, keyed by objectName() -- independent of
+		// (and deliberately never updated from) each QDockWidget's own
+		// isVisible(), which is not the same thing. Qt reports a dock as
+		// not-visible whenever the layout squeezes it down to zero size
+		// for lack of room -- observed in practice for "Black's
+		// evaluation" during engine-engine play, since it is the
+		// innermost/last dock in the nested split set up in
+		// createDockWindows() and so the first to be squeezed -- even
+		// though the user never touched its tick box. dockVisibilityMap()
+		// used to return each dock's isVisible() directly, so that
+		// transient, layout-driven squeeze was indistinguishable from a
+		// real untick to every caller of dockVisibilityMap(): both
+		// stageGeometryForShutdown() (staging the batch write to disk)
+		// and CuteChessApplication::backupViewMenuState() (the
+		// docks_backup snapshot taken at quit) would capture the same
+		// wrong "false" if either happened to run while the squeeze was
+		// in effect, so at the next startup verifyViewMenuAgainstBackup()
+		// found the saved value and the backup already agreeing and
+		// "corrected" nothing.
+		//
+		// m_userDockVisibility exists to break that: it only ever changes
+		// in response to a genuine, deliberate change of a dock's ticked
+		// state -- seeded from each dock's real starting state in
+		// createDockWindows(), updated by the toggleViewAction()
+		// triggered() handler there (see the long comment on that
+		// connection), and kept in sync wherever this file explicitly
+		// calls dock->setVisible() to restore a saved/backed-up state
+		// (applySavedGeometry(), verifyViewMenuAgainstBackup()). It is
+		// never written from isVisible() or from visibilityChanged(), so
+		// a transient layout squeeze can never leak into it.
+		// dockVisibilityMap() returns this map rather than querying
+		// isVisible() directly, so every caller -- the immediate-write
+		// path, the shutdown staging path, and the quit-time backup --
+		// is automatically immune to the same class of bug, rather than
+		// each needing its own squeeze-detection workaround.
+		QVariantMap m_userDockVisibility;
 
 		// Live "White wins - Draws - Black wins" + Elo diff readout for
 		// two-player engine tournaments, refreshed whenever a

@@ -438,30 +438,85 @@ void MainWindow::createDockWindows()
 	m_dockWidgets << moveListDock << tagsDock << engineDebugDock
 		      << evalHistoryDock << whiteEvalDock << blackEvalDock;
 
+	// Seed the user's genuine ticked/visible intent for each dock (see
+	// the long comment on m_userDockVisibility in mainwindow.h) from its
+	// real starting state, set just above via the addDockWidget()/close()
+	// calls. This runs before any layout activation has had a chance to
+	// squeeze a dock down to zero size, so isVisible() here still
+	// reflects a real, deliberate state rather than a transient one.
+	for (QDockWidget* dock : m_dockWidgets)
+		m_userDockVisibility.insert(dock->objectName(), dock->isVisible());
+
 	// Belt and braces: besides the batch write that happens at a clean
 	// shutdown (stageGeometryForShutdown() -> onAboutToQuit(), see the
 	// long comment there), also persist each dock's ticked/visible
-	// state to disk the instant it actually changes. The batch write
-	// alone depends on aboutToQuit() actually running to completion;
-	// this bug has come back more than once via new paths that end the
-	// process, or the settings write, without going through that exact
-	// route (a crash, a forced/unexpected termination, or some future
-	// code change upstream of it). Writing here as well means a ticked
-	// box's state is never lost regardless of *how* the session ends --
-	// this is a deliberately redundant, "make it hard to break again"
-	// safeguard rather than a fix aimed at one specific cause.
+	// state to disk the instant the user actually changes it. The batch
+	// write alone depends on aboutToQuit() actually running to
+	// completion; this bug has come back more than once via new paths
+	// that end the process, or the settings write, without going
+	// through that exact route (a crash, a forced/unexpected
+	// termination, or some future code change upstream of it). Writing
+	// here as well means a ticked box's state is never lost regardless
+	// of *how* the session ends -- this is a deliberately redundant,
+	// "make it hard to break again" safeguard rather than a fix aimed
+	// at one specific cause.
+	//
+	// This used to listen to QDockWidget::visibilityChanged() directly,
+	// which sounds like the obvious signal but is NOT the same thing as
+	// "the user ticked/unticked the box": Qt also emits it whenever a
+	// dock's *effective* on-screen visibility changes for reasons that
+	// have nothing to do with the user's chosen ticked state, most
+	// notably when the main window's layout has to squeeze a dock down
+	// to zero size because there isn't room for it -- exactly what can
+	// happen, transiently, while cutechess is opening/closing several
+	// game tabs in quick succession (e.g. a running engine-engine
+	// tournament, where finished games are torn down and new ones
+	// started back-to-back, each briefly reflowing the whole dock
+	// layout). Of the docks in m_dockWidgets, "Black's evaluation" is
+	// the innermost/last one in the nested split (see the
+	// splitDockWidget() calls above) and so is consistently the first
+	// to get squeezed out during that transient reflow, even though the
+	// user never touched its tick box. Writing straight to disk on
+	// every such signal -- as this used to do -- permanently persisted
+	// that transient, layout-driven "false" as if it were the user's
+	// real preference, which is exactly the reported bug: the tick
+	// silently reverts, specifically during engine-engine play, and
+	// specifically (though not exclusively, in principle) for this
+	// dock.
+	//
+	// QAction::triggered(bool) does not have this problem: unlike
+	// toggled(), which (like visibilityChanged()) fires for *any*
+	// change to the action's checked state including one Qt makes
+	// internally to keep toggleViewAction() in sync with a
+	// layout-driven visibility change, triggered() only fires for a
+	// genuine activation of the action -- the user actually clicking
+	// the View menu entry (or its shortcut), or code explicitly calling
+	// trigger()/activate(). It is never emitted as a side effect of
+	// dock->setVisible() being called by the layout engine, or by the
+	// startup restore code below (applySavedGeometry(),
+	// verifyViewMenuAgainstBackup()), both of which call setVisible()
+	// directly rather than triggering the action. So connecting here
+	// instead of to visibilityChanged() writes to disk only for real,
+	// deliberate ticks/unticks, and never for incidental layout churn.
 	for (QDockWidget* dock : m_dockWidgets)
 	{
-		connect(dock, &QDockWidget::visibilityChanged,
-			this, &MainWindow::saveDockVisibilityImmediately);
+		connect(dock->toggleViewAction(), &QAction::triggered,
+			this, [this, dock](bool visible)
+			{
+				// A genuine, deliberate tick/untick -- see
+				// m_userDockVisibility's doc comment in
+				// mainwindow.h for why this (and the two
+				// setVisible() call sites below) are the only
+				// places this map is ever written.
+				m_userDockVisibility.insert(dock->objectName(), visible);
+				saveDockVisibilityImmediately(dock, visible);
+			});
 	}
 }
 
-void MainWindow::saveDockVisibilityImmediately(bool visible)
+void MainWindow::saveDockVisibilityImmediately(QDockWidget* dock, bool visible)
 {
-	QDockWidget* dock = qobject_cast<QDockWidget*>(sender());
-	if (dock == nullptr)
-		return;
+	Q_ASSERT(dock != nullptr);
 
 	// Each write is its own fresh QSettings object, immediately
 	// sync()ed, exactly like the other individual settings writes
@@ -502,10 +557,16 @@ void MainWindow::applySavedGeometry()
 	s.beginGroup("ui");
 	s.beginGroup("mainwindow");
 
-	restoreGeometry(s.value("geometry").toByteArray());
+	// restoreState() first, restoreGeometry() second: restoreState()
+	// lays out the docks/toolbars against the window's size at the
+	// time it runs, which can itself resize the window (see
+	// enforceSavedWindowGeometry()'s doc comment for why, especially
+	// with nested/split docks). Applying the saved window rectangle
+	// with restoreGeometry() *after* that means it wins over whatever
+	// restoreState() just did, rather than being immediately
+	// overwritten by it.
 	restoreState(s.value("window_state").toByteArray());
-
-	s.endGroup();
+	restoreGeometry(s.value("geometry").toByteArray());
 
 	// Explicitly re-apply each dock's last saved ticked/visible state,
 	// on top of whatever restoreState() above just did.
@@ -530,24 +591,70 @@ void MainWindow::applySavedGeometry()
 	// CuteChessApplication::onAboutToQuit()), so it can be reapplied
 	// here directly and doesn't depend on the rest of restoreState()
 	// having succeeded.
+	//
+	// Deliberately entered here, still nested inside "mainwindow" (i.e.
+	// "ui/mainwindow/docks"), the same group saveDockVisibilityImmediately()
+	// and the batch write in CuteChessApplication::onAboutToQuit() both
+	// use. This used to sit after an extra, premature s.endGroup() that
+	// closed "mainwindow" first, so this read came from the unrelated
+	// top-level group "ui/docks" instead -- see the matching comment in
+	// CuteChessApplication::onAboutToQuit() for the full story of how
+	// that happened to still "work" while leaving
+	// saveDockVisibilityImmediately()'s belt-and-braces write orphaned.
 	s.beginGroup("docks");
 	for (QDockWidget* dock : m_dockWidgets)
 	{
 		const QString key = dock->objectName();
 		if (s.contains(key))
-			dock->setVisible(s.value(key).toBool());
+		{
+			const bool visible = s.value(key).toBool();
+			dock->setVisible(visible);
+			// Restoring the user's last saved choice is itself a
+			// genuine, deliberate state, so keep
+			// m_userDockVisibility (see its doc comment in
+			// mainwindow.h) in sync with it -- otherwise the very
+			// next layout reflow's transient isVisible() would have
+			// nothing correct to fall back on.
+			m_userDockVisibility.insert(key, visible);
+		}
 	}
 	s.endGroup();
 
 	s.endGroup();
+	s.endGroup();
+
+	// The dock visibility changes just above are themselves a form of
+	// layout activation and can resize the window on their own -- see
+	// enforceSavedWindowGeometry()'s doc comment. Have the saved
+	// window rectangle win over that too, here at the true end of this
+	// function.
+	enforceSavedWindowGeometry();
+}
+
+void MainWindow::enforceSavedWindowGeometry()
+{
+	QSettings s;
+	s.beginGroup("ui");
+	s.beginGroup("mainwindow");
+	const QByteArray geometry = s.value("geometry").toByteArray();
+	s.endGroup();
+	s.endGroup();
+
+	if (!geometry.isEmpty())
+		restoreGeometry(geometry);
 }
 
 QVariantMap MainWindow::dockVisibilityMap() const
 {
-	QVariantMap map;
-	for (QDockWidget* dock : m_dockWidgets)
-		map.insert(dock->objectName(), dock->isVisible());
-	return map;
+	// Deliberately m_userDockVisibility, not each dock's isVisible() --
+	// see the long comment on m_userDockVisibility in mainwindow.h for
+	// why querying isVisible() here is exactly the bug that let a
+	// transient layout squeeze (observed for "Black's evaluation" during
+	// engine-engine play) get permanently persisted as the user's real
+	// preference, both via the immediate-write/shutdown-staging path and
+	// via CuteChessApplication::backupViewMenuState()'s snapshot, which
+	// both call this function.
+	return m_userDockVisibility;
 }
 
 void MainWindow::showEvent(QShowEvent* event)
@@ -585,6 +692,15 @@ void MainWindow::restoreSavedGeometry()
 	// close, restoring from that backup if not. See
 	// verifyViewMenuAgainstBackup()'s doc comment in mainwindow.h.
 	verifyViewMenuAgainstBackup();
+
+	// verifyViewMenuAgainstBackup() can itself toggle dock visibility
+	// (see enforceSavedWindowGeometry()'s doc comment for why that
+	// matters), and this whole function is the deferred, "real" restore
+	// that showEvent() schedules specifically to win any last-moment
+	// placement race -- so this is the true last point before the
+	// window is on screen for good. Enforce the saved rectangle one
+	// final time here, after everything else above has had its say.
+	enforceSavedWindowGeometry();
 
 	m_settingsRestored = true;
 }
@@ -639,7 +755,15 @@ void MainWindow::verifyViewMenuAgainstBackup()
 	{
 		const QString key = dock->objectName();
 		if (backup.contains(key))
-			dock->setVisible(backup.value(key).toBool());
+		{
+			const bool visible = backup.value(key).toBool();
+			dock->setVisible(visible);
+			// See the matching comment in applySavedGeometry():
+			// this is also a genuine, deliberate restore of the
+			// user's real state, so m_userDockVisibility needs to
+			// agree with it.
+			m_userDockVisibility.insert(key, visible);
+		}
 	}
 }
 
@@ -664,7 +788,22 @@ void MainWindow::moveEvent(QMoveEvent* event)
 	// be closed as part of a tournament finishing, or during "Quit")
 	// could stage the position of a window the user doesn't actually
 	// care about, overwriting what the active window had staged.
-	if (m_settingsRestored && isActiveWindow() && !isMinimized())
+	//
+	// !m_closing is equally important: once a shutdown has actually
+	// been requested (see closeEvent()), closeAllGames() and/or a
+	// tournament stopping go on to hide docks and close tabs, which
+	// can genuinely resize/move this still-active window as a side
+	// effect of that teardown. Without this guard, that teardown-driven
+	// resize (e.g. the window collapsing in height once its docks are
+	// hidden) would overwrite the correct geometry -- already staged
+	// the instant the shutdown request came in, see closeEvent() -- with
+	// the shrunk one, right before it gets written to disk. This is
+	// exactly the "geometry doesn't always stick" bug: only ever
+	// noticeable via a quit that has something to tear down (an open
+	// game/tournament with its docks populated), which is why it comes
+	// and goes and why width (largely unaffected by the bottom docks
+	// collapsing) kept sticking while height didn't.
+	if (m_settingsRestored && isActiveWindow() && !isMinimized() && !m_closing)
 		stageGeometryForShutdown();
 }
 
@@ -672,7 +811,9 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 {
 	QMainWindow::resizeEvent(event);
 
-	if (m_settingsRestored && isActiveWindow() && !isMinimized())
+	// See the matching comment in moveEvent() above for why !m_closing
+	// is required here too.
+	if (m_settingsRestored && isActiveWindow() && !isMinimized() && !m_closing)
 		stageGeometryForShutdown();
 }
 
@@ -1514,24 +1655,41 @@ void MainWindow::closeEvent(QCloseEvent* event)
 {
 	if (m_readyToClose)
 	{
-		// Stage this window's final geometry right before it actually
-		// closes -- as late as possible, since after this the window
-		// (and its geometry) is gone for good. Only the active window
-		// stages: during "Quit" or a tournament finishing, several
-		// windows can each reach this point within the same event-loop
-		// pass, and only the one the user was actually looking at
-		// should be allowed to be remembered as "the" saved position.
+		// This window's real, user-set geometry was already staged
+		// below, the moment this shutdown was first requested -- i.e.
+		// before askToSave()/closeAllGames() (or a tournament being
+		// stopped) had any chance to run, hide docks, close tabs, and
+		// shrink the window as a side effect of that teardown. Nothing
+		// is (re-)staged here: by the time control reaches this point,
+		// any such teardown has typically already happened, so calling
+		// stageGeometryForShutdown() at this late point would capture
+		// and save that shrunk size instead of the correct one. See
+		// moveEvent()/resizeEvent() for the other half of this guard.
 		//
-		// Note this only stages the value in memory; it is not written
-		// to disk here. See CuteChessApplication::onAboutToQuit() for
-		// where and why the actual write happens.
-		bool isLastWindow =
-			CuteChessApplication::instance()->gameWindows().size() <= 1;
-		if (isActiveWindow() || isLastWindow)
-			stageGeometryForShutdown();
+		// Note staging only ever writes the value to memory; the write
+		// to disk happens separately. See
+		// CuteChessApplication::onAboutToQuit() for where and why.
 		QMainWindow::closeEvent(event);
 		return;
 	}
+
+	// This is "a shutdown request", in the sense the user cares about:
+	// the window's close button, File > Quit, Ctrl+Q, etc. Record the
+	// geometry right now, before anything below (askToSave(),
+	// closeAllGames(), or a running tournament being stopped) gets a
+	// chance to hide docks/close tabs and resize the window -- which
+	// would otherwise silently overwrite this correct, user-set
+	// geometry with whatever smaller size the window happens to end up
+	// at once that teardown has run. Only the active window (or the
+	// last one, if none is active) stages: during "Quit" or a
+	// tournament finishing, several windows can each reach this point
+	// within the same event-loop pass, and only the one the user was
+	// actually looking at should be allowed to be remembered as "the"
+	// saved position.
+	bool isLastWindow =
+		CuteChessApplication::instance()->gameWindows().size() <= 1;
+	if (isActiveWindow() || isLastWindow)
+		stageGeometryForShutdown();
 
 	if (askToSave())
 	{

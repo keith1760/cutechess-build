@@ -49,6 +49,7 @@ class GameSettingsWidget : public QWidget
 		int openingSuiteDepth() const;
 		OpeningBook* openingBook() const;
 		int bookDepth() const;
+		int bookRandomness() const;
 		bool isValid() const;
 
 		void applyEngineConfiguration(EngineConfiguration* config);

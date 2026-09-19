@@ -21,6 +21,8 @@
 #include <QFile>
 #include <QDataStream>
 #include <QtDebug>
+#include <QVector>
+#include <QtGlobal>
 #include "pgngame.h"
 #include "pgnstream.h"
 #include "mersenne.h"
@@ -48,7 +50,8 @@ QDataStream& operator<<(QDataStream& out, const OpeningBook* book)
 }
 
 OpeningBook::OpeningBook(AccessMode mode)
-	: m_mode(mode)
+	: m_mode(mode),
+	  m_randomness(0)
 {
 }
 
@@ -225,6 +228,16 @@ QList<OpeningBook::Entry> OpeningBook::entries(quint64 key) const
 	return entriesFromDisk(key);
 }
 
+int OpeningBook::randomness() const
+{
+	return m_randomness;
+}
+
+void OpeningBook::setRandomness(int percent)
+{
+	m_randomness = qBound(0, percent, 100);
+}
+
 Chess::GenericMove OpeningBook::move(quint64 key) const
 {
 	Chess::GenericMove move;
@@ -234,7 +247,7 @@ Chess::GenericMove OpeningBook::move(quint64 key) const
 	const auto entries = this->entries(key);
 	if (entries.isEmpty())
 		return move;
-	
+
 	// Calculate the total weight of all available moves
 	int totalWeight = 0;
 	for (const Entry& entry : entries)
@@ -242,16 +255,58 @@ Chess::GenericMove OpeningBook::move(quint64 key) const
 	if (totalWeight <= 0)
 		return move;
 
-	// Pick a move randomly, with the highest-weighted move having
-	// the highest probability of getting picked.
-	int pick = Mersenne::random() % totalWeight;
-	int currentWeight = 0;
+	// randomness() is a percentage (0-100) that blends each move's
+	// popularity-based selection probability with an equal share
+	// among all matching moves. At 0% (the default), this reduces
+	// to the original behavior: pure popularity-weighted selection.
+	// At 100%, popularity/weight has no influence at all, and every
+	// matching move is equally likely to be picked.
+	int n = entries.size();
+	double r = qBound(0, m_randomness, 100) / 100.0;
+
+	if (r <= 0.0)
+	{
+		// Fast path: identical to the original, purely
+		// weighted selection.
+		int pick = Mersenne::random() % totalWeight;
+		int currentWeight = 0;
+		for (const Entry& entry : entries)
+		{
+			currentWeight += entry.weight;
+			if (currentWeight > pick)
+				return entry.move;
+		}
+		return move;
+	}
+
+	// Blend each move's popularity share with a uniform share.
+	QVector<double> effectiveWeights;
+	effectiveWeights.reserve(n);
+	double totalEffective = 0.0;
+	double uniformShare = 1.0 / double(n);
 	for (const Entry& entry : entries)
 	{
-		currentWeight += entry.weight;
-		if (currentWeight > pick)
-			return entry.move;
+		double popularityShare = double(entry.weight) / double(totalWeight);
+		double blended = (1.0 - r) * popularityShare + r * uniformShare;
+		effectiveWeights.append(blended);
+		totalEffective += blended;
 	}
-	
-	return move;
+	if (totalEffective <= 0.0)
+		return move;
+
+	// Pick a move using the blended weights. Mersenne::random() is
+	// used as the source of randomness for consistency with the
+	// rest of the engine, scaled down to a double in [0, 1).
+	double pick = (double(Mersenne::random()) / 4294967296.0) * totalEffective;
+	double currentWeight = 0.0;
+	for (int i = 0; i < n; i++)
+	{
+		currentWeight += effectiveWeights.at(i);
+		if (currentWeight > pick)
+			return entries.at(i).move;
+	}
+
+	// Guard against floating-point rounding leaving a tiny
+	// remainder unassigned; fall back to the last move.
+	return entries.last().move;
 }

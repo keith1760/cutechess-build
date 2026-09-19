@@ -56,6 +56,7 @@
 #	include <signal.h>
 #	include <unistd.h>
 #	include <cstring>
+#	include <fcntl.h>
 #endif
 
 
@@ -152,6 +153,20 @@ void CuteChessApplication::installSignalHandlers()
 		qWarning("Couldn't create signal handler socket pair");
 		return;
 	}
+
+	// The read end must be non-blocking: handleUnixSignal() below drains
+	// it with a while (::read(...) > 0) loop, and on a blocking socket
+	// that loop's final call -- made once the pipe is genuinely empty --
+	// never returns instead of failing with EAGAIN/EWOULDBLOCK. That
+	// hangs the Qt event loop forever, so onQuitAction() is never
+	// reached and closeEvent()/aboutToQuit() (and therefore the
+	// geometry write in onAboutToQuit()) never run. This is why
+	// geometry "doesn't always stick": it depends entirely on a signal
+	// (SIGTERM/SIGINT/SIGHUP, e.g. from a desktop logout/shutdown)
+	// never actually reaching here, since one always freezes the app.
+	int flags = ::fcntl(m_signalFd[1], F_GETFL, 0);
+	if (flags != -1)
+		::fcntl(m_signalFd[1], F_SETFL, flags | O_NONBLOCK);
 
 	m_signalNotifier = new QSocketNotifier(m_signalFd[1], QSocketNotifier::Read, this);
 	connect(m_signalNotifier, SIGNAL(activated(int)), this, SLOT(handleUnixSignal()));
@@ -787,8 +802,6 @@ void CuteChessApplication::onAboutToQuit()
 		s.setValue("geometry", m_pendingMainWindowGeometry);
 		s.setValue("window_state", m_pendingMainWindowState);
 
-		s.endGroup();
-
 		// Each View-menu dock's ticked/visible state is also saved as
 		// its own plain boolean, separately from "window_state" above.
 		// See recordMainWindowGeometry()'s doc comment for why: the
@@ -802,6 +815,26 @@ void CuteChessApplication::onAboutToQuit()
 		// comes back in the right place" and "none of the docks are
 		// where they were left" is exactly what these separate,
 		// independently-restorable booleans avoid.
+		//
+		// Written here while still nested inside "mainwindow" (i.e. to
+		// "ui/mainwindow/docks"), the same group MainWindow::
+		// saveDockVisibilityImmediately() and MainWindow::
+		// applySavedGeometry() both use for these same keys, and the
+		// same nesting depth "docks_backup" uses just below in
+		// CuteChessApplication::backupViewMenuState(). An earlier
+		// version of this function called s.endGroup() for
+		// "mainwindow" before this point, which silently moved this
+		// write to the unrelated top-level group "ui/docks" instead --
+		// still internally consistent with applySavedGeometry() (which
+		// had the matching premature endGroup() on its read side, so
+		// the two "agreed" with each other), but orphaning
+		// saveDockVisibilityImmediately()'s belt-and-braces immediate
+		// write to "ui/mainwindow/docks", which nothing ever read back.
+		// That silent split between two different code paths saving
+		// what is supposed to be the same setting is exactly the kind
+		// of fragility that let this general area of the code regress
+		// more than once, so all three paths now deliberately share one
+		// literal nesting.
 		s.beginGroup("docks");
 		for (auto it = m_pendingDockVisibility.constBegin();
 		     it != m_pendingDockVisibility.constEnd(); ++it)
@@ -810,6 +843,7 @@ void CuteChessApplication::onAboutToQuit()
 		}
 		s.endGroup();
 
+		s.endGroup();
 		s.endGroup();
 		s.sync();
 	}

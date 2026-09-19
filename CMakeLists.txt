@@ -270,6 +270,7 @@ if(WIN32)
 	)
 endif()
 
+
 set_target_properties(gui PROPERTIES OUTPUT_NAME cutechess)
 set_target_properties(gui PROPERTIES AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/projects/gui/ui)
 set_target_properties(gui PROPERTIES WIN32_EXECUTABLE ON)

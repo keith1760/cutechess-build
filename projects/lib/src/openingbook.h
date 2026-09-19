@@ -102,11 +102,45 @@ class LIB_EXPORT OpeningBook
 		 * If no matching moves are found, an empty (illegal) move is
 		 * returned.
 		 *
-		 * If there are multiple matches, a random, weighted move is
-		 * returned. Popular moves have a higher probablity of being
-		 * selected than unpopular ones.
+		 * If there are multiple matches, a random move is returned.
+		 * How much influence each move's popularity/weight has on the
+		 * selection is controlled by randomness(): at 0 (the default)
+		 * popular moves have a higher probability of being selected
+		 * than unpopular ones, exactly as recorded in the book; at
+		 * 100, every matching move is equally likely regardless of
+		 * its weight. See setRandomness() for details.
 		 */
 		Chess::GenericMove move(quint64 key) const;
+
+		/*!
+		 * Returns the current randomness setting, as a percentage
+		 * from 0 to 100. The default is 0.
+		 *
+		 * \sa setRandomness()
+		 */
+		int randomness() const;
+
+		/*!
+		 * Sets how random the opening move selection is, as a
+		 * percentage \a percent from 0 to 100 (values outside this
+		 * range are clamped).
+		 *
+		 * At 0%, moves are chosen purely by their book weight
+		 * (usually based on popularity), which is the traditional
+		 * behavior: the higher a move's weight, the more likely it
+		 * is to be picked.
+		 *
+		 * At 100%, book weights are ignored entirely and every
+		 * matching move for a position is equally likely to be
+		 * picked, regardless of popularity or any other non-random
+		 * factor.
+		 *
+		 * Values in between linearly blend the two: each move's
+		 * effective selection probability is a mix of its
+		 * popularity-based share and an equal share among all
+		 * matching moves.
+		 */
+		void setRandomness(int percent);
 
 		/*! Returns all entries matching \a key. */
 		QList<Entry> entries(quint64 key) const;
@@ -155,6 +189,7 @@ class LIB_EXPORT OpeningBook
 		AccessMode m_mode;
 		QString m_filename;
 		Map m_map;
+		int m_randomness;
 };
 
 /*!

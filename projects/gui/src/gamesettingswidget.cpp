@@ -109,6 +109,12 @@ GameSettingsWidget::GameSettingsWidget(QWidget* parent)
 		ui->m_polyglotDepthSpin->setEnabled(!str.isEmpty());
 		ui->m_ramAccessRadio->setEnabled(!str.isEmpty());
 		ui->m_diskAccessRadio->setEnabled(!str.isEmpty());
+		ui->m_polyglotRandomnessSlider->setEnabled(!str.isEmpty());
+	});
+
+	connect(ui->m_polyglotRandomnessSlider, &QSlider::valueChanged, [=](int value)
+	{
+		ui->m_polyglotRandomnessValueLabel->setText(QString("%1%").arg(value));
 	});
 
 	readSettings();
@@ -215,6 +221,7 @@ OpeningBook* GameSettingsWidget::openingBook() const
 		delete book;
 		return nullptr;
 	}
+	book->setRandomness(bookRandomness());
 
 	return book;
 }
@@ -222,6 +229,11 @@ OpeningBook* GameSettingsWidget::openingBook() const
 int GameSettingsWidget::bookDepth() const
 {
 	return ui->m_polyglotDepthSpin->value();
+}
+
+int GameSettingsWidget::bookRandomness() const
+{
+	return ui->m_polyglotRandomnessSlider->value();
 }
 
 void GameSettingsWidget::applyEngineConfiguration(EngineConfiguration* config)
@@ -268,6 +280,7 @@ void GameSettingsWidget::readSettings()
 	ui->m_polyglotDepthSpin->setValue(s.value("depth", 10).toInt());
 	if (s.value("disk_access").toBool())
 		ui->m_diskAccessRadio->setChecked(true);
+	ui->m_polyglotRandomnessSlider->setValue(s.value("randomness", 0).toInt());
 	s.endGroup();
 
 	s.beginGroup("draw_adjudication");
@@ -350,6 +363,11 @@ void GameSettingsWidget::enableSettingsUpdates()
 	connect(ui->m_diskAccessRadio, &QRadioButton::toggled, [=](bool checked)
 	{
 		QSettings().setValue("games/opening_book/disk_access", checked);
+	});
+	connect(ui->m_polyglotRandomnessSlider, &QSlider::valueChanged,
+		[=](int value)
+	{
+		QSettings().setValue("games/opening_book/randomness", value);
 	});
 
 	connect(ui->m_drawMoveNumberSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged),

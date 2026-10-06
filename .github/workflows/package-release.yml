@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "Workflow run id that produced the CutechessWindowsEvalBarFix artifact (only needed for manual re-runs)"
+        description: "Workflow run id that produced the CutechessWindowsandSliderFix06-10-26 artifact (only needed for manual re-runs)"
         required: false
 
 permissions: {}
@@ -30,7 +30,7 @@ jobs:
       - name: download built windows artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: CutechessWindowsEvalBarFix
+          name: CutechessWindowsandSliderFix06-10-26
           path: winbuild
           run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -38,20 +38,20 @@ jobs:
       - name: zip windows build (includes bundled source copy)
         run: |
           cd winbuild
-          zip -r ../CutechessWindowsEvalBarFix-win64.zip .
+          zip -r ../CutechessWindowsandSliderFix06-10-26-win64.zip .
           cd ..
 
       - name: zip a standalone extra copy of the source code
         run: |
-          git archive --format=zip -o CutechessWindowsEvalBarFix-source.zip HEAD
+          git archive --format=zip -o CutechessWindowsandSliderFix06-10-26-source.zip HEAD
 
       - name: create release
         run: |
           TAG="winrelease-${{ github.run_id }}"
           gh release create "$TAG" \
-            --title "CutechessWindowsEvalBarFix (${{ github.run_id }})" \
-            --notes "Windows build of CutechessWindowsEvalBarFix.exe with bundled Qt6 runtime and a copy of the source, plus a standalone extra copy of the source code." \
-            CutechessWindowsEvalBarFix-win64.zip \
-            CutechessWindowsEvalBarFix-source.zip
+            --title "CutechessWindowsandSliderFix06-10-26 (${{ github.run_id }})" \
+            --notes "Windows build of CutechessWindowsandSliderFix06-10-26.exe with bundled Qt6 runtime and a copy of the source, plus a standalone extra copy of the source code." \
+            CutechessWindowsandSliderFix06-10-26-win64.zip \
+            CutechessWindowsandSliderFix06-10-26-source.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

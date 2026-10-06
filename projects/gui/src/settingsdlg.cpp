@@ -20,6 +20,10 @@
 #include "ui_settingsdlg.h"
 #include "dialoggeometry.h"
 #include <QShowEvent>
+#include <QScrollArea>
+#include <QTabWidget>
+#include <QScreen>
+#include <QGuiApplication>
 #include <QSettings>
 
 #include <uciengine.h>
@@ -35,7 +39,42 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 	  m_updatingBoardColorControls(false)
 {
 	ui->setupUi(this);
+
+	// The dialog's natural height is tall enough that, on many Windows
+	// screens, the OK/Cancel buttons end up hidden behind the task bar.
+	// Make the dialog about 20% less tall than its natural height, and put
+	// each tab's page inside a scroll area so the shorter dialog can still
+	// reach every control (a scroll bar appears only if it is needed).
+	const int naturalHeight = sizeHint().height();
+	const int targetHeight = naturalHeight * 80 / 100;
+	for (int i = 0; i < ui->tabWidget->count(); i++)
+	{
+		QWidget* page = ui->tabWidget->widget(i);
+		const QString title = ui->tabWidget->tabText(i);
+		ui->tabWidget->removeTab(i);
+		auto scroll = new QScrollArea;
+		scroll->setWidgetResizable(true);
+		scroll->setFrameShape(QFrame::NoFrame);
+		scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+		scroll->setWidget(page);
+		ui->tabWidget->insertTab(i, scroll, title);
+	}
+	ui->tabWidget->setCurrentIndex(0);
+	setMinimumHeight(0);
+	resize(qMax(width(), sizeHint().width()), targetHeight);
+
 	restoreDialogGeometry(this, QStringLiteral("settingsdialog"));
+
+	// A geometry saved from the old, taller dialog must not bring the old
+	// height back, and the dialog must always fit on the screen.
+	if (height() > targetHeight)
+		resize(width(), targetHeight);
+	if (QScreen* screen = QGuiApplication::primaryScreen())
+	{
+		const QRect avail = screen->availableGeometry();
+		if (height() > avail.height() - 60)
+			resize(width(), avail.height() - 60);
+	}
 	ui->m_gameSettings->enableSplitTimeControls(true);
 
 	readSettings();

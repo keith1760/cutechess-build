@@ -428,3 +428,12 @@ engine skips that case. Also checked with the real `GameViewer` in a Qt
 offscreen session: grab/drag/release, keyboard steps, a user pause kept, viewer
 board equal to game board after each rewind, play continuing from the rewound
 position.
+
+## Settings dialog height (about 20% shorter)
+
+Tools > Settings was tall enough that its bottom controls could end up
+behind the Windows task bar. `SettingsDialog`'s constructor
+(`projects/gui/src/settingsdlg.cpp`) now sizes the dialog to 80% of its
+natural height, wraps each tab page in a `QScrollArea` (so everything stays
+reachable via a scroll bar if needed), caps any previously saved taller
+geometry, and keeps the dialog within the screen's available area.

@@ -50,7 +50,16 @@ jobs:
         shell: cmd
         run: |
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          ctest --test-dir build
+          ctest --test-dir build -C Release --output-on-failure > test.log 2>&1
+          set RC=%ERRORLEVEL%
+          type test.log
+          exit /b %RC%
+
+      - name: report test failures
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "Test +#|FAIL|Failed|tests failed|\\*\\*\\*|QFATAL|Loc:|Actual|Expected" test.log | head -40 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=test failures::/' || true
 
       - name: stage a clean, self-contained output folder
         shell: cmd

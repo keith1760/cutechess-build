@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QDir>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -101,7 +102,22 @@ void tst_EngineDialog::init()
 
 EngineConfiguration tst_EngineDialog::fakeEngine() const
 {
+#ifdef Q_OS_WIN
+	// Windows cannot run a .py file through its shebang line, so
+	// start it through a small batch launcher instead.
+	const QString bat = m_dir->filePath("fakeuci.bat");
+	QFile f(bat);
+	if (f.open(QIODevice::WriteOnly))
+	{
+		f.write("@echo off\r\npython \"" +
+			QDir::toNativeSeparators(QString(FAKEUCI_PATH)).toLocal8Bit() +
+			"\" %*\r\n");
+		f.close();
+	}
+	return EngineConfiguration("Fake", QDir::toNativeSeparators(bat), "uci");
+#else
 	return EngineConfiguration("Fake", FAKEUCI_PATH, "uci");
+#endif
 }
 
 EngineOption* tst_EngineDialog::findOption(const QList<EngineOption*>& options,

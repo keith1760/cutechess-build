@@ -47,6 +47,8 @@ jobs:
           grep -E "error|Error|FAILED" build.log | head -25 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=build errors::/' || true
 
       - name: run unit tests
+        id: tests
+        continue-on-error: true
         shell: cmd
         run: |
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
@@ -56,10 +58,11 @@ jobs:
           exit /b %RC%
 
       - name: report test failures
-        if: failure()
+        if: steps.tests.outcome == 'failure'
         shell: bash
         run: |
-          grep -E "Test +#|FAIL|Failed|tests failed|\\*\\*\\*|QFATAL|Loc:|Actual|Expected" test.log | head -40 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=test failures::/' || true
+          n=$(grep -n "test_enginedialog" test.log | head -1 | cut -d: -f1)
+          tail -n +"${n:-1}" test.log | head -60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=test failures::/' || true
 
       - name: stage a clean, self-contained output folder
         shell: cmd

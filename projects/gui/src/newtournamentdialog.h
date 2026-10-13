@@ -44,6 +44,8 @@ class NewTournamentDialog : public QDialog
 		virtual ~NewTournamentDialog();
 
 		Tournament* createTournament(GameManager* gameManager) const;
+		/*! Remembers the current engine list (public so tests link on MSVC). */
+		void saveEngineList() const;
 
 	private slots:
 		void addEngineOnDblClick(const QModelIndex& index);
@@ -61,7 +63,6 @@ class NewTournamentDialog : public QDialog
 		void readSettings();
 		void writeSettings();
 		void restoreLastEngineList();
-		void saveEngineList() const;
 
 		EngineManager* m_srcEngineManager;
 		EngineManager* m_addedEnginesManager;

@@ -63,6 +63,8 @@ class NewGameDialog : public QDialog
 		ChessGame* createGame() const;
 		/*! Creates and returns the PlayerBuilder for \a side. */
 		PlayerBuilder* createPlayerBuilder(Chess::Side side) const;
+		/*! Remembers the engine chosen for \a side (public so tests link on MSVC). */
+		void saveEngineChoice(Chess::Side side) const;
 
 	private slots:
 		void configureEngine();
@@ -72,7 +74,6 @@ class NewGameDialog : public QDialog
 	private:
 		void setPlayerType(Chess::Side side, PlayerType type);
 		PlayerType playerType(Chess::Side side) const;
-		void saveEngineChoice(Chess::Side side) const;
 		void restoreEngineChoice(Chess::Side side);
 
 		EngineManager* m_engineManager;

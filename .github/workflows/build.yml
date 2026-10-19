@@ -14,6 +14,8 @@ jobs:
   build:
     name: "windows-2022 Qt 6.8.3"
     runs-on: windows-2022
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -61,3 +63,14 @@ jobs:
           name: CutechessCastleDrop16-10-26
           path: winpkg/
           if-no-files-found: error
+
+      - name: publish the build as a release
+        shell: bash
+        run: |
+          cd winpkg && 7z a -tzip ../CutechessCastleDrop16-10-26-win64.zip . > /dev/null && cd ..
+          gh release create "winrelease-${{ github.run_id }}" \
+            --title "CutechessCastleDrop16-10-26 (${{ github.run_id }})" \
+            --notes "Windows build of CutechessCastleDrop16-10-26.exe" \
+            CutechessCastleDrop16-10-26-win64.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

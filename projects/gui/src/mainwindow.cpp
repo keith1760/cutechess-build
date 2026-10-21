@@ -46,6 +46,8 @@
 #include <QPainter>
 #include <QPalette>
 #include <QStyle>
+#include <QFontInfo>
+#include <QApplication>
 
 #include <cmath>
 #include <limits>
@@ -545,12 +547,7 @@ class DockTitleBar : public QWidget
 		{
 			setAutoFillBackground(false);
 
-			m_label = new QLabel(dock->windowTitle(), this);
-			// A widget-local stylesheet wins over the application-wide
-			// one, so these are guaranteed to be what is shown.
-			m_label->setStyleSheet(QStringLiteral(
-				"QLabel { color: #000000; font-weight: bold;"
-				" background: transparent; }"));
+			m_title = dock->windowTitle();
 
 			m_floatButton = makeButton(
 				QStringLiteral("qt_dockwidget_floatbutton"),
@@ -564,12 +561,17 @@ class DockTitleBar : public QWidget
 			auto layout = new QHBoxLayout(this);
 			layout->setContentsMargins(6, 2, 2, 2);
 			layout->setSpacing(2);
-			layout->addWidget(m_label, 1);
+			layout->addStretch(1);
 			layout->addWidget(m_floatButton);
 			layout->addWidget(m_closeButton);
 
 			connect(dock, &QDockWidget::windowTitleChanged,
-				m_label, &QLabel::setText);
+				this, [this](const QString& title)
+				{
+					m_title = title;
+					update();
+				});
+			setMinimumHeight(QFontMetrics(titleFont()).height() + 8);
 			connect(m_floatButton, &QAbstractButton::clicked,
 				dock, [dock]() { dock->setFloating(!dock->isFloating()); });
 			connect(m_closeButton, &QAbstractButton::clicked,
@@ -592,9 +594,33 @@ class DockTitleBar : public QWidget
 			p.fillRect(rect(), bg);
 			p.setPen(bg.darker(120));
 			p.drawLine(0, height() - 1, width(), height() - 1);
+
+			// Title text: drawn here, with an explicit bold font and
+			// pure black, rather than by a QLabel/stylesheet or the
+			// platform style, so nothing else can override them.
+			p.setFont(titleFont());
+			p.setPen(Qt::black);
+			const QRect textRect(6, 0,
+					     qMax(0, m_floatButton->x() - 8), height());
+			p.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
+				   QFontMetrics(titleFont()).elidedText(
+					   m_title, Qt::ElideRight, textRect.width()));
 		}
 
 	private:
+		// Bold, and the same ~2px larger than the default that the
+		// other headings use (see applyCustomAppearance()).
+		static QFont titleFont()
+		{
+			QFont f = QApplication::font();
+			int px = QFontInfo(f).pixelSize();
+			if (px <= 0)
+				px = qRound(QFontInfo(f).pointSizeF() * 96.0 / 72.0);
+			f.setPixelSize(px + 2);
+			f.setBold(true);
+			return f;
+		}
+
 		QToolButton* makeButton(const QString& name,
 					QStyle::StandardPixmap icon,
 					const QString& toolTip)
@@ -617,7 +643,7 @@ class DockTitleBar : public QWidget
 		}
 
 		QDockWidget* m_dock;
-		QLabel* m_label;
+		QString m_title;
 		QToolButton* m_floatButton;
 		QToolButton* m_closeButton;
 };

@@ -357,6 +357,24 @@ void CuteChessApplication::applyCustomAppearance()
 		"QGroupBox::title {"
 		"  font-weight: bold;"
 		"  font-size: %1px;"
+		"  color: #000000;"
+		"  background-color: %4;"
+		"}"
+		// Dock-widget titles (Moves, Tags, evaluation panels, ...) were
+		// being painted by the style with a white background and grey
+		// text, ignoring the palette. State the window background
+		// colour and bold black text explicitly so titles match the
+		// window they sit on.
+		"QDockWidget {"
+		"  color: #000000;"
+		"}"
+		"QDockWidget::title {"
+		"  background-color: %4;"
+		"  color: #000000;"
+		"  font-weight: bold;"
+		"  font-size: %1px;"
+		"  text-align: left;"
+		"  padding-left: 4px;"
 		"}"
 		"QHeaderView::section {"
 		"  font-weight: bold;"
@@ -378,7 +396,8 @@ void CuteChessApplication::applyCustomAppearance()
 		"}"
 	).arg(QString::number(headingPx),
 	      QString::number(openingPx),
-	      QString::number(scorePx));
+	      QString::number(scorePx),
+	      midCream.name());
 
 	setStyleSheet(sheet);
 }

@@ -713,3 +713,16 @@ on it back into the king-takes-rook move before the move is sent on (normal
 play or Branch). If the g/c square is itself a normal legal king move
 (Chess960) the normal move keeps priority and no alias is added.
 Built against Qt 6.4.2; compiled and linked only, not run or tested.
+
+## Title bars (dock titles and window captions)
+
+Dock titles (Moves, Tags, evaluation panels, ...) were drawn by the platform
+style with a white background and grey text; a `QDockWidget::title` stylesheet
+rule had no effect on Windows. Each dock now has a self-painted title bar
+(`DockTitleBar` in `mainwindow.cpp`): window-background colour, bold black text,
+float/close buttons (keeping Qt's object names so close-tracking still works).
+
+On Windows 11, native window captions (main window, dialogs, floating windows)
+are tinted to the same background with black text via `DwmSetWindowAttribute`
+(`applyNativeCaptionColours()` in `cutechessapp.cpp`). Native captions cannot be
+made bold; on older Windows this is silently ignored.

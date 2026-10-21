@@ -34,6 +34,9 @@
 #include <QPalette>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QWidget>
+#include <QEvent>
+#include <QLibrary>
 
 #include <mersenne.h>
 #include <enginemanager.h>
@@ -252,6 +255,68 @@ static void forceFusionStyleForReliablePaletteSupport()
 }
 #endif
 
+#ifdef Q_OS_WIN32
+// Native window title bars (main window, floating windows, dialogs) are
+// drawn by Windows, not Qt, so neither QPalette nor a stylesheet can
+// touch them; they come out white with grey text when inactive.
+// Windows 11 (build 22000+) lets an application choose the caption
+// colour and caption text colour per window through
+// DwmSetWindowAttribute(). Use that to give every top-level window a
+// caption in the same background colour as the window, with black text.
+// (Windows draws native caption text in its own font, so it cannot be
+// made bold.) On older Windows the call just fails and is ignored.
+static void applyNativeCaptionColours(QWidget* w, const QColor& bg)
+{
+	typedef long (__stdcall *DwmSetWindowAttributeFn)(void*, unsigned long,
+							  const void*, unsigned long);
+	static DwmSetWindowAttributeFn fn = []() -> DwmSetWindowAttributeFn
+	{
+		QLibrary lib(QStringLiteral("dwmapi"));
+		return reinterpret_cast<DwmSetWindowAttributeFn>(
+			lib.resolve("DwmSetWindowAttribute"));
+	}();
+	if (fn == nullptr || !w->isWindow())
+		return;
+
+	void* hwnd = reinterpret_cast<void*>(w->winId());
+	const unsigned long DWMWA_BORDER_COLOR = 34;
+	const unsigned long DWMWA_CAPTION_COLOR = 35;
+	const unsigned long DWMWA_TEXT_COLOR = 36;
+
+	// COLORREF is 0x00BBGGRR.
+	const unsigned long bgRef = static_cast<unsigned long>(
+		bg.red() | (bg.green() << 8) | (bg.blue() << 16));
+	const unsigned long textRef = 0x00000000; // black
+
+	fn(hwnd, DWMWA_CAPTION_COLOR, &bgRef, sizeof(bgRef));
+	fn(hwnd, DWMWA_BORDER_COLOR, &bgRef, sizeof(bgRef));
+	fn(hwnd, DWMWA_TEXT_COLOR, &textRef, sizeof(textRef));
+}
+
+// Colours every top-level window as it is shown (dialogs and floating
+// windows are created later than startup).
+class CaptionColourFilter : public QObject
+{
+	public:
+		explicit CaptionColourFilter(CuteChessApplication* app)
+			: QObject(app), m_app(app) {}
+
+		bool eventFilter(QObject* watched, QEvent* event) override
+		{
+			if (event->type() == QEvent::Show)
+			{
+				auto w = qobject_cast<QWidget*>(watched);
+				if (w != nullptr && w->isWindow())
+					applyNativeCaptionColours(w, m_app->boardBackgroundColor());
+			}
+			return QObject::eventFilter(watched, event);
+		}
+
+	private:
+		CuteChessApplication* m_app;
+};
+#endif
+
 void CuteChessApplication::applyCustomAppearance()
 {
 #ifdef Q_OS_WIN32
@@ -360,22 +425,10 @@ void CuteChessApplication::applyCustomAppearance()
 		"  color: #000000;"
 		"  background-color: %4;"
 		"}"
-		// Dock-widget titles (Moves, Tags, evaluation panels, ...) were
-		// being painted by the style with a white background and grey
-		// text, ignoring the palette. State the window background
-		// colour and bold black text explicitly so titles match the
-		// window they sit on.
-		"QDockWidget {"
-		"  color: #000000;"
-		"}"
-		"QDockWidget::title {"
-		"  background-color: %4;"
-		"  color: #000000;"
-		"  font-weight: bold;"
-		"  font-size: %1px;"
-		"  text-align: left;"
-		"  padding-left: 4px;"
-		"}"
+		// Dock-widget titles (Moves, Tags, evaluation panels, ...) are
+		// NOT styled here: a "QDockWidget::title" rule does not reliably
+		// reach the title on Windows. Each dock gets a self-painted
+		// title bar instead (see DockTitleBar in mainwindow.cpp).
 		"QHeaderView::section {"
 		"  font-weight: bold;"
 		"  font-size: %1px;"
@@ -400,6 +453,23 @@ void CuteChessApplication::applyCustomAppearance()
 	      midCream.name());
 
 	setStyleSheet(sheet);
+
+#ifdef Q_OS_WIN32
+	// Install the caption-colour filter once; on later calls (the user
+	// changed the background colour) recolour the windows already open.
+	static bool captionFilterInstalled = false;
+	if (!captionFilterInstalled)
+	{
+		installEventFilter(new CaptionColourFilter(this));
+		captionFilterInstalled = true;
+	}
+	const QWidgetList windows = topLevelWidgets();
+	for (QWidget* w : windows)
+	{
+		if (w->isVisible())
+			applyNativeCaptionColours(w, midCream);
+	}
+#endif
 }
 
 QColor CuteChessApplication::boardBackgroundColor() const

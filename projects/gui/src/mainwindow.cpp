@@ -43,6 +43,9 @@
 #include <QLabel>
 #include <QStatusBar>
 #include <QFontMetrics>
+#include <QPainter>
+#include <QPalette>
+#include <QStyle>
 
 #include <cmath>
 #include <limits>
@@ -516,6 +519,111 @@ void MainWindow::createToolBars()
 	addToolBar(toolBar);
 }
 
+namespace {
+
+// Self-painted title bar for the dock widgets (Moves, Tags, evaluation
+// panels, ...).
+//
+// The default title is painted by the platform QStyle (and, for a
+// floating dock on some platforms, by the OS window frame), so it
+// ignores the application palette and could show up with a white
+// background and grey text. A previous attempt to fix that with a
+// "QDockWidget::title" stylesheet rule had no effect on Windows. A
+// custom title bar widget bypasses all of that: it is plain Qt widgets
+// that fill themselves with the application's window background colour
+// and draw the title in bold black, whatever the style or OS is doing.
+//
+// The buttons keep Qt's own object names ("qt_dockwidget_closebutton",
+// "qt_dockwidget_floatbutton") because MainWindow::createDockWindows()
+// looks the close button up by name to remember user-closed docks.
+class DockTitleBar : public QWidget
+{
+	public:
+		explicit DockTitleBar(QDockWidget* dock)
+			: QWidget(dock),
+			  m_dock(dock)
+		{
+			setAutoFillBackground(false);
+
+			m_label = new QLabel(dock->windowTitle(), this);
+			// A widget-local stylesheet wins over the application-wide
+			// one, so these are guaranteed to be what is shown.
+			m_label->setStyleSheet(QStringLiteral(
+				"QLabel { color: #000000; font-weight: bold;"
+				" background: transparent; }"));
+
+			m_floatButton = makeButton(
+				QStringLiteral("qt_dockwidget_floatbutton"),
+				QStyle::SP_TitleBarNormalButton,
+				tr("Float"));
+			m_closeButton = makeButton(
+				QStringLiteral("qt_dockwidget_closebutton"),
+				QStyle::SP_TitleBarCloseButton,
+				tr("Close"));
+
+			auto layout = new QHBoxLayout(this);
+			layout->setContentsMargins(6, 2, 2, 2);
+			layout->setSpacing(2);
+			layout->addWidget(m_label, 1);
+			layout->addWidget(m_floatButton);
+			layout->addWidget(m_closeButton);
+
+			connect(dock, &QDockWidget::windowTitleChanged,
+				m_label, &QLabel::setText);
+			connect(m_floatButton, &QAbstractButton::clicked,
+				dock, [dock]() { dock->setFloating(!dock->isFloating()); });
+			connect(m_closeButton, &QAbstractButton::clicked,
+				dock, &QDockWidget::close);
+
+			updateButtons();
+			connect(dock, &QDockWidget::featuresChanged,
+				this, [this]() { updateButtons(); });
+		}
+
+	protected:
+		void paintEvent(QPaintEvent*) override
+		{
+			// Same colour as the windows the docks sit on: the
+			// application palette's Window role, which
+			// CuteChessApplication::applyCustomAppearance() sets from
+			// the user's chosen background colour.
+			const QColor bg = QApplication::palette().color(QPalette::Window);
+			QPainter p(this);
+			p.fillRect(rect(), bg);
+			p.setPen(bg.darker(120));
+			p.drawLine(0, height() - 1, width(), height() - 1);
+		}
+
+	private:
+		QToolButton* makeButton(const QString& name,
+					QStyle::StandardPixmap icon,
+					const QString& toolTip)
+		{
+			auto button = new QToolButton(this);
+			button->setObjectName(name);
+			button->setAutoRaise(true);
+			button->setFocusPolicy(Qt::NoFocus);
+			button->setIcon(style()->standardIcon(icon));
+			button->setToolTip(toolTip);
+			return button;
+		}
+
+		void updateButtons()
+		{
+			m_floatButton->setVisible(
+				m_dock->features().testFlag(QDockWidget::DockWidgetFloatable));
+			m_closeButton->setVisible(
+				m_dock->features().testFlag(QDockWidget::DockWidgetClosable));
+		}
+
+		QDockWidget* m_dock;
+		QLabel* m_label;
+		QToolButton* m_floatButton;
+		QToolButton* m_closeButton;
+};
+
+} // anonymous namespace
+
 void MainWindow::createDockWindows()
 {
 	// Engine debug
@@ -614,6 +722,10 @@ void MainWindow::createDockWindows()
 	// verifyViewMenuAgainstBackup()).
 	for (QDockWidget* dock : m_dockWidgets)
 	{
+		// Replace the style/OS-drawn title with our own (cream
+		// background, bold black text) -- see DockTitleBar.
+		dock->setTitleBarWidget(new DockTitleBar(dock));
+
 		connect(dock->toggleViewAction(), &QAction::triggered,
 			this, [this, dock](bool visible)
 			{

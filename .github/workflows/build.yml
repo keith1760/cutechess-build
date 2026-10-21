@@ -45,7 +45,7 @@ jobs:
         shell: cmd
         run: |
           mkdir winpkg
-          copy build\Release\cutechess.exe winpkg\CutechessCastleDrop16-10-26.exe
+          copy build\Release\cutechess.exe winpkg\CutechessCastleDrop21-10-26-TitleFix.exe
           copy build\Release\cutechess-cli.exe winpkg\cutechess-cli.exe
           copy COPYING winpkg\COPYING.txt
 
@@ -53,24 +53,24 @@ jobs:
         shell: cmd
         run: |
           call "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessCastleDrop16-10-26.exe
+          windeployqt --release --no-translations --no-compiler-runtime winpkg\CutechessCastleDrop21-10-26-TitleFix.exe
           windeployqt --release --no-translations --no-compiler-runtime winpkg\cutechess-cli.exe
           copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" winpkg\
 
       - name: upload windows executable artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: CutechessCastleDrop16-10-26
+          name: CutechessCastleDrop21-10-26-TitleFix
           path: winpkg/
           if-no-files-found: error
 
       - name: publish the build as a release
         shell: bash
         run: |
-          cd winpkg && 7z a -tzip ../CutechessCastleDrop16-10-26-win64.zip . > /dev/null && cd ..
+          cd winpkg && 7z a -tzip ../CutechessCastleDrop21-10-26-TitleFix-win64.zip . > /dev/null && cd ..
           gh release create "winrelease-${{ github.run_id }}" \
-            --title "CutechessCastleDrop16-10-26 (${{ github.run_id }})" \
-            --notes "Windows build of CutechessCastleDrop16-10-26.exe" \
-            CutechessCastleDrop16-10-26-win64.zip
+            --title "CutechessCastleDrop21-10-26-TitleFix (${{ github.run_id }})" \
+            --notes "Windows build of CutechessCastleDrop21-10-26-TitleFix.exe" \
+            CutechessCastleDrop21-10-26-TitleFix-win64.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -610,9 +610,12 @@ class DockTitleBar : public QWidget
 	private:
 		// Bold, and the same ~2px larger than the default that the
 		// other headings use (see applyCustomAppearance()).
-		static QFont titleFont()
+		QFont titleFont() const
 		{
-			QFont f = QApplication::font();
+			// The widget's own (class/platform) font, as the style
+			// would have used for a dock title, not the bare
+			// application default.
+			QFont f = font();
 			int px = QFontInfo(f).pixelSize();
 			if (px <= 0)
 				px = qRound(QFontInfo(f).pointSizeF() * 96.0 / 72.0);

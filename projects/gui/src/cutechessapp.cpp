@@ -269,12 +269,13 @@ static void applyNativeCaptionColours(QWidget* w, const QColor& bg)
 {
 	typedef long (__stdcall *DwmSetWindowAttributeFn)(void*, unsigned long,
 							  const void*, unsigned long);
-	static DwmSetWindowAttributeFn fn = []() -> DwmSetWindowAttributeFn
-	{
-		QLibrary lib(QStringLiteral("dwmapi"));
-		return reinterpret_cast<DwmSetWindowAttributeFn>(
+	// Keep the library loaded for as long as the resolved function
+	// pointer is used. A QLibrary local to the resolver lambda would be
+	// destroyed immediately after resolution and could unload dwmapi.dll.
+	static QLibrary lib(QStringLiteral("dwmapi"));
+	static DwmSetWindowAttributeFn fn =
+		reinterpret_cast<DwmSetWindowAttributeFn>(
 			lib.resolve("DwmSetWindowAttribute"));
-	}();
 	if (fn == nullptr || !w->isWindow())
 		return;
 

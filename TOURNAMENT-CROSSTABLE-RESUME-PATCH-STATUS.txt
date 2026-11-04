@@ -1,0 +1,50 @@
+Tournament crosstables / Previous Tournaments / Resume Tournament
+=================================================================
+
+What it does
+------------
+* Tournament > Results shows the tournament's crosstable: name, site, type,
+  variant, games finished (of total), games per encounter / rounds / seeds,
+  PGN file, and a standings table (rank, player, time control, games, points,
+  score %, W/D/L, Elo difference implied by the score and its uncertainty)
+  plus a head-to-head crosstable. (Tournament::htmlReport, projects/lib)
+* Every tournament, finished or not, is saved as an HTML crosstable in the
+  folder "Previous Tournaments" next to the Cute Chess program (falls back to
+  the same folder name in the user's application-data folder if the program
+  folder is not writable). It is rewritten after every game. Size limit
+  5,000,000 bytes for the whole folder; oldest records are deleted first.
+  (tournamentarchive.cpp/.h, tournamentresultsdlg.cpp)
+* Tournament menu (was: menu bar next to Help): "Previous Tournaments" submenu (list, newest first,
+  opens the crosstable in a window; "Open folder...") and "Resume Tournament".
+* Resume Tournament: choose the PGN of an unfinished tournament. The settings
+  stored beside it (<pgn>.cutechess.ini: engines + options, time controls,
+  tournament options, openings/book, adjudication, name, random seed) are
+  restored into the New Tournament dialog; press OK/Start and the games
+  already in the PGN are replayed into the scores and the schedule continues
+  (Tournament::setResume). (tournamentresume.cpp/.h, mainwindow.cpp,
+  newtournamentdialog.cpp)
+
+Fixes made to the earlier partial patch
+---------------------------------------
+* Archive file names had a malformed timestamp ("hHmmss" = hour twice).
+* Archive was ordered by modification time (the live record is touched
+  constantly) and only counted .html files; now ordered by creation stamp and
+  all files count.
+* Settings sidecar missed the tournament name and the random seed. Without the
+  seed a random-order opening suite is shuffled differently on resume and the
+  scheduler (rightly) rejects the PGN. Seed is now stored and re-applied.
+* Restoring a sidecar left stale per-engine time controls behind.
+* Resuming a tournament that was already complete left the Start/Stop menu
+  items in the wrong state (tournament finished inside start()).
+* Results dialog never showed resumed games until the next game finished.
+* Previous Tournaments opened the system browser; now shown in-program.
+* Toolbar duplicate removed; buttons are in the menu bar next to Help.
+
+Known limits
+------------
+* PGNs made before this patch have no .cutechess.ini: name, site, variant and
+  players are rebuilt from the games, the rest comes from the last tournament
+  set up. The first-appearance order of the players in the PGN is not always the
+  original order (e.g. round-robin with 3 players), so it may have to be fixed
+  with the Up/Down buttons; the scheduler refuses to continue on a mismatch.
+* Games in progress when a tournament was stopped are discarded on resume.

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# AppRun for the Cutechess AppImage. Launches the bundled Cutechess GUI.
+
+set -e
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="${HERE}/usr/plugins:${QT_PLUGIN_PATH}"
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# Fall back to the offscreen/minimal Qt platform automatically if no display
+# is available and the user hasn't already chosen one, so the AppImage does
+# not hang or crash confusingly when run e.g. over a headless SSH session.
+if [ -z "${QT_QPA_PLATFORM}" ] && [ -z "${DISPLAY}" ] && [ -z "${WAYLAND_DISPLAY}" ]; then
+    export QT_QPA_PLATFORM=offscreen
+fi
+
+exec "${HERE}/usr/bin/cutechess" "$@"
